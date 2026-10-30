@@ -234,7 +234,7 @@ export function MindMap(props: {
             return (
               <div
                 key={n.id}
-                className="pointer-events-auto absolute animate-bubble-pop"
+                className="pointer-events-auto absolute"
                 style={{ left: n.x, top: n.y, transform: "translate(-50%, -50%)" }}
                 onPointerDown={(e) => onNodeDown(e, n)}
                 onPointerMove={onMove}
@@ -246,7 +246,7 @@ export function MindMap(props: {
               >
                 <div
                   className={cn(
-                    "relative max-w-[240px] min-w-[110px] cursor-pointer rounded-[1.75rem] px-5 py-3 text-center font-display text-base font-medium leading-snug shadow-bubble transition-shadow",
+                    "relative animate-bubble-pop max-w-[240px] min-w-[110px] cursor-pointer rounded-[1.75rem] px-5 py-3 text-center font-display text-base font-medium leading-snug shadow-bubble transition-shadow",
                     suggested && "border-[3px] border-dashed border-ai opacity-95",
                     isSel && "ring-4 ring-primary ring-offset-2 ring-offset-canvas",
                     connectFrom === n.id && "ring-4 ring-ai",
