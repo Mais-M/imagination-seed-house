@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction, type PointerEvent as RPE } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, Link2, ListPlus, Loader2, Maximize, Minus, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Check, GitBranch, Link2, ListPlus, Loader2, Maximize, Minus, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -81,14 +81,21 @@ export function MindMap(props: {
     return { x: (cx - r.left - v.x) / v.k, y: (cy - r.top - v.y) / v.k };
   };
 
-  const addNode = async (x: number, y: number, text = t("addIdea")) => {
-    if (!canEdit) return;
+  const addNode = async (x: number, y: number, text = t("addIdea")): Promise<string | undefined> => {
+    if (!canEdit) return undefined;
     const color = randomColor();
     const { data, error } = await supabase.from("nodes").insert({ board_id: boardId, text, color, x, y }).select().single();
     if (error) { toast.error(error.message); return; }
     setNodes((l) => upsert(l, data));
     setSelected(data.id);
     setEditing(data.id);
+    return data.id as string;
+  };
+
+  const addBranch = async (parent: Node) => {
+    const a = Math.random() * Math.PI * 2;
+    const id = await addNode(parent.x + Math.cos(a) * 200, parent.y + Math.sin(a) * 160);
+    if (id) await connect(parent.id, id);
   };
 
   const updateNode = async (id: string, patch: Partial<Node>) => {
@@ -254,6 +261,7 @@ export function MindMap(props: {
                   {editing === n.id ? (
                     <textarea
                       autoFocus
+                      onFocus={(e) => e.currentTarget.select()}
                       defaultValue={n.text}
                       onPointerDown={(e) => e.stopPropagation()}
                       onBlur={(e) => {
@@ -299,6 +307,9 @@ export function MindMap(props: {
           <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-full bg-card p-1 shadow-bubble animate-bubble-pop">
             <Button variant="ai" size="sm" disabled={aiBusy || sel.status === "suggested"} onClick={() => runAI(sel.id)}>
               {aiBusy ? <Loader2 className="animate-spin" /> : <Sparkles />} {t("expandAI")}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => addBranch(sel)}>
+              <GitBranch /> {t("branch")}
             </Button>
             <Button variant={connectFrom ? "secondary" : "ghost"} size="sm" onClick={() => setConnectFrom(connectFrom ? null : sel.id)}>
               <Link2 /> {t("connect")}
