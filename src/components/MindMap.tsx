@@ -81,6 +81,61 @@ export function MindMap(props: {
     return { x: (cx - r.left - v.x) / v.k, y: (cy - r.top - v.y) / v.k };
   };
 
+  // ---- history (undo / redo) ----
+  type Entry = { undo: () => Promise<void>; redo: () => Promise<void> };
+  const past = useRef<Entry[]>([]);
+  const future = useRef<Entry[]>([]);
+  const [, bump] = useState(0);
+  const push = (e: Entry) => {
+    past.current.push(e);
+    if (past.current.length > 100) past.current.shift();
+    future.current = [];
+    bump((x) => x + 1);
+  };
+  const undo = async () => {
+    const e = past.current.pop();
+    if (!e) return void toast.message(t("nothingToUndo"));
+    await e.undo();
+    future.current.push(e);
+    bump((x) => x + 1);
+  };
+  const redo = async () => {
+    const e = future.current.pop();
+    if (!e) return void toast.message(t("nothingToRedo"));
+    await e.redo();
+    past.current.push(e);
+    bump((x) => x + 1);
+  };
+  const undoRef = useRef(undo);
+  undoRef.current = undo;
+  const redoRef = useRef(redo);
+  redoRef.current = redo;
+  useEffect(() => {
+    if (!canEdit) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); undoRef.current(); }
+      else if (k === "y" || (k === "z" && e.shiftKey)) { e.preventDefault(); redoRef.current(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canEdit]);
+
+  // raw writes (no history)
+  const writeNode = async (id: string, patch: Partial<Node>) => {
+    setNodes((l) => l.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+    const { error } = await supabase.from("nodes").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) toast.error(error.message);
+  };
+  const writeConn = async (id: string, patch: Partial<Conn>) => {
+    setConns((l) => l.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    const { error } = await supabase.from("connections").update(patch).eq("id", id);
+    if (error) toast.error(error.message);
+  };
+
   const addNode = async (x: number, y: number, text = t("addIdea")): Promise<string | undefined> => {
     if (!canEdit) return undefined;
     const color = randomColor();
@@ -89,7 +144,9 @@ export function MindMap(props: {
     setNodes((l) => upsert(l, data));
     setSelected(data.id);
     setEditing(data.id);
-    return data.id as string;
+    const id = data.id as string;
+    push({ undo: () => writeNode(id, { deleted_at: new Date().toISOString() }), redo: () => writeNode(id, { deleted_at: null }) });
+    return id;
   };
 
   const addBranch = async (parent: Node) => {
@@ -98,31 +155,63 @@ export function MindMap(props: {
     if (id) await connect(parent.id, id);
   };
 
-  const updateNode = async (id: string, patch: Partial<Node>) => {
-    setNodes((l) => l.map((n) => (n.id === id ? { ...n, ...patch } : n)));
-    const { error } = await supabase.from("nodes").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-    if (error) toast.error(error.message);
+  // recorded update: remembers previous values of the changed fields
+  const updateNode = async (id: string, patch: Partial<Node>, prevOverride?: Partial<Node>) => {
+    const cur = nodes.find((n) => n.id === id);
+    if (cur) {
+      const prev = prevOverride ?? (Object.fromEntries(Object.keys(patch).map((k) => [k, cur[k as keyof Node]])) as Partial<Node>);
+      push({ undo: () => writeNode(id, prev), redo: () => writeNode(id, patch) });
+    }
+    await writeNode(id, patch);
   };
 
+  const restoreNode = async (id: string) => {
+    await writeNode(id, { deleted_at: null });
+    toast.success(t("ideaRestored"));
+  };
+
+  // soft delete: keeps content, color, position, connections for restore
   const deleteNode = async (id: string) => {
+    setSelected(null);
+    const entry: Entry = { undo: () => writeNode(id, { deleted_at: null }), redo: () => writeNode(id, { deleted_at: new Date().toISOString() }) };
+    push(entry);
+    await entry.redo();
+    toast(t("ideaDeleted"), { action: { label: t("undo"), onClick: () => undoRef.current() } });
+  };
+
+  // pending AI suggestions that are dismissed are discarded (never kept)
+  const dismissSuggestion = async (id: string) => {
     setNodes((l) => l.filter((n) => n.id !== id));
     setConns((l) => l.filter((c) => c.from_node !== id && c.to_node !== id));
     setSelected(null);
+    await supabase.from("connections").delete().or(`from_node.eq.${id},to_node.eq.${id}`);
     const { error } = await supabase.from("nodes").delete().eq("id", id);
     if (error) toast.error(error.message);
   };
 
   const connect = async (a: string, b: string) => {
-    if (a === b || conns.some((c) => (c.from_node === a && c.to_node === b) || (c.from_node === b && c.to_node === a))) return;
-    const { data, error } = await supabase.from("connections").insert({ board_id: boardId, from_node: a, to_node: b }).select().single();
-    if (error) { toast.error(error.message); return; }
-    setConns((l) => upsert(l, data));
+    if (a === b) return;
+    const same = (c: Conn) => (c.from_node === a && c.to_node === b) || (c.from_node === b && c.to_node === a);
+    if (conns.some((c) => same(c) && !c.deleted_at)) return;
+    const old = conns.find((c) => same(c) && c.deleted_at);
+    let id: string;
+    if (old) {
+      id = old.id;
+      await writeConn(id, { deleted_at: null });
+    } else {
+      const { data, error } = await supabase.from("connections").insert({ board_id: boardId, from_node: a, to_node: b }).select().single();
+      if (error) { toast.error(error.message); return; }
+      setConns((l) => upsert(l, data));
+      id = data.id;
+    }
+    push({ undo: () => writeConn(id, { deleted_at: new Date().toISOString() }), redo: () => writeConn(id, { deleted_at: null }) });
   };
 
   const deleteConn = async (id: string) => {
     if (!canEdit) return;
-    setConns((l) => l.filter((c) => c.id !== id));
-    await supabase.from("connections").delete().eq("id", id);
+    const entry: Entry = { undo: () => writeConn(id, { deleted_at: null }), redo: () => writeConn(id, { deleted_at: new Date().toISOString() }) };
+    push(entry);
+    await entry.redo();
   };
 
   const makeTodo = async (node: Node) => {
