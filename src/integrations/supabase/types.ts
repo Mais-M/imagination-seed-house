@@ -14,13 +14,310 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      board_members: {
+        Row: {
+          board_id: string
+          created_at: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          board_id: string
+          created_at?: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          board_id?: string
+          created_at?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "board_members_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      boards: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          owner_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          owner_id: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          owner_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      connections: {
+        Row: {
+          board_id: string
+          created_at: string
+          from_node: string
+          id: string
+          is_ai: boolean
+          to_node: string
+        }
+        Insert: {
+          board_id: string
+          created_at?: string
+          from_node: string
+          id?: string
+          is_ai?: boolean
+          to_node: string
+        }
+        Update: {
+          board_id?: string
+          created_at?: string
+          from_node?: string
+          id?: string
+          is_ai?: boolean
+          to_node?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connections_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connections_from_node_fkey"
+            columns: ["from_node"]
+            isOneToOne: false
+            referencedRelation: "nodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connections_to_node_fkey"
+            columns: ["to_node"]
+            isOneToOne: false
+            referencedRelation: "nodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nodes: {
+        Row: {
+          ai_type: string | null
+          board_id: string
+          color: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_ai: boolean
+          note_id: string | null
+          source_node_id: string | null
+          status: string
+          text: string
+          updated_at: string
+          x: number
+          y: number
+        }
+        Insert: {
+          ai_type?: string | null
+          board_id: string
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_ai?: boolean
+          note_id?: string | null
+          source_node_id?: string | null
+          status?: string
+          text?: string
+          updated_at?: string
+          x?: number
+          y?: number
+        }
+        Update: {
+          ai_type?: string | null
+          board_id?: string
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_ai?: boolean
+          note_id?: string | null
+          source_node_id?: string | null
+          status?: string
+          text?: string
+          updated_at?: string
+          x?: number
+          y?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nodes_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nodes_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nodes_source_node_id_fkey"
+            columns: ["source_node_id"]
+            isOneToOne: false
+            referencedRelation: "nodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notes: {
+        Row: {
+          board_id: string
+          color: string
+          content: string
+          created_at: string
+          created_by: string
+          id: string
+          kind: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          board_id: string
+          color?: string
+          content?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          kind?: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          board_id?: string
+          color?: string
+          content?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          kind?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notes_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      todo_items: {
+        Row: {
+          board_id: string
+          created_at: string
+          done: boolean
+          id: string
+          note_id: string
+          position: number
+          text: string
+        }
+        Insert: {
+          board_id: string
+          created_at?: string
+          done?: boolean
+          id?: string
+          note_id: string
+          position?: number
+          text?: string
+        }
+        Update: {
+          board_id?: string
+          created_at?: string
+          done?: boolean
+          id?: string
+          note_id?: string
+          position?: number
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "todo_items_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_items_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "notes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      can_edit_board: { Args: { _board: string }; Returns: boolean }
+      can_view_board: { Args: { _board: string }; Returns: boolean }
+      is_board_owner: { Args: { _board: string }; Returns: boolean }
+      share_board: {
+        Args: { _board: string; _email: string; _role: string }
+        Returns: string
+      }
+      shares_board_with: { Args: { _other: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
