@@ -65,8 +65,8 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
       .map((s: Record<string, unknown>) => ({
         type: String(s?.["type"] ?? "idea").toLowerCase(),
         text: String(s?.["text"] ?? "").slice(0, 500).trim(),
-        color: typeof s?.["color"] === "string" ? s.color : "",
-        related: typeof s?.["related_node_id"] === "string" ? s.related_node_id : typeof s?.["related_node"] === "string" ? s.related_node : null,
+        color: typeof s?.["color"] === "string" ? s["color"] : "",
+        related: typeof s?.["related_node_id"] === "string" ? s["related_node_id"] : typeof s?.["related_node"] === "string" ? s["related_node"] : null,
       }))
       .filter((s) => s.text);
     if (!rows.length) return { ok: true as const, added: 0 };
