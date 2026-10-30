@@ -15,6 +15,13 @@
       "when": 1793370117986,
       "tag": "0001_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793379770043,
+      "tag": "0002_soft_delete_nodes",
+      "breakpoints": true
     }
   ]
 }
