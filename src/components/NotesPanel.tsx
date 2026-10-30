@@ -3,7 +3,7 @@ import { Check, FileText, ListTodo, Network, Plus, Trash2, X } from "lucide-reac
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { bubbleBg, PALETTE } from "@/components/brand";
+import { bubbleBg, PALETTE, randomColor } from "@/components/brand";
 import { useI18n } from "@/lib/i18n";
 import type { Note, Todo, Node } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
@@ -44,9 +44,9 @@ export function NotesPanel(props: {
   const note = notes.find((n) => n.id === active);
 
   const create = async (kind: "note" | "todo") => {
-    const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    const color = randomColor();
     const { data, error } = await supabase.from("notes").insert({ board_id: boardId, kind, color, title: kind === "todo" ? t("newTodo") : t("newNote") }).select().single();
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setNotes((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
     setActive(data.id);
   };
@@ -66,14 +66,14 @@ export function NotesPanel(props: {
       .insert({ board_id: boardId, text: n.title || n.content.slice(0, 80) || "…", color: n.color, note_id: n.id, x: (Math.random() - 0.5) * 300, y: (Math.random() - 0.5) * 300 })
       .select()
       .single();
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setNodes((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
     toast.success(t("addedToMap"));
   };
   const addTodo = async (text: string) => {
     if (!note || !text.trim()) return;
     const { data, error } = await supabase.from("todo_items").insert({ note_id: note.id, board_id: boardId, text: text.trim(), position: Date.now() % 1e9 }).select().single();
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setTodos((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
   };
   const patchTodo = async (id: string, p: Partial<Todo>) => {

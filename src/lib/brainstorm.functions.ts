@@ -63,10 +63,10 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
     const ids = new Set((nodes ?? []).map((n) => n.id));
     const rows = list
       .map((s: Record<string, unknown>) => ({
-        type: String(s?.type ?? "idea").toLowerCase(),
-        text: String(s?.text ?? "").slice(0, 500).trim(),
-        color: typeof s?.color === "string" ? s.color : "",
-        related: typeof s?.related_node_id === "string" ? s.related_node_id : typeof s?.related_node === "string" ? s.related_node : null,
+        type: String(s?.["type"] ?? "idea").toLowerCase(),
+        text: String(s?.["text"] ?? "").slice(0, 500).trim(),
+        color: typeof s?.["color"] === "string" ? s.color : "",
+        related: typeof s?.["related_node_id"] === "string" ? s.related_node_id : typeof s?.["related_node"] === "string" ? s.related_node : null,
       }))
       .filter((s) => s.text);
     if (!rows.length) return { ok: true as const, added: 0 };
@@ -78,7 +78,7 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
       return {
         board_id: data.boardId,
         text: s.text,
-        color: s.color || TYPE_COLOR[type],
+        color: s.color || TYPE_COLOR[type] || "sky",
         x: focus.x + Math.cos(a) * R,
         y: focus.y + Math.sin(a) * R,
         is_ai: true,
@@ -94,7 +94,7 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
     }
     const links = created.flatMap((n, i) => {
       const out = [{ board_id: data.boardId, from_node: focus.id, to_node: n.id, is_ai: true }];
-      const rel = rows[i].related;
+      const rel = rows[i]?.related;
       if (rel && ids.has(rel) && rel !== focus.id) out.push({ board_id: data.boardId, from_node: n.id, to_node: rel, is_ai: true });
       return out;
     });

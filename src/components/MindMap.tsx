@@ -4,7 +4,7 @@ import { Check, Link2, ListPlus, Loader2, Maximize, Minus, Plus, Sparkles, Trash
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { bubbleBg, PALETTE } from "@/components/brand";
+import { bubbleBg, PALETTE, randomColor } from "@/components/brand";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { requestBrainstorm } from "@/lib/brainstorm.functions";
 import type { Conn, Node, Note } from "@/lib/useBoard";
@@ -83,9 +83,9 @@ export function MindMap(props: {
 
   const addNode = async (x: number, y: number, text = t("addIdea")) => {
     if (!canEdit) return;
-    const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    const color = randomColor();
     const { data, error } = await supabase.from("nodes").insert({ board_id: boardId, text, color, x, y }).select().single();
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setNodes((l) => upsert(l, data));
     setSelected(data.id);
     setEditing(data.id);
@@ -108,7 +108,7 @@ export function MindMap(props: {
   const connect = async (a: string, b: string) => {
     if (a === b || conns.some((c) => (c.from_node === a && c.to_node === b) || (c.from_node === b && c.to_node === a))) return;
     const { data, error } = await supabase.from("connections").insert({ board_id: boardId, from_node: a, to_node: b }).select().single();
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setConns((l) => upsert(l, data));
   };
 
@@ -122,11 +122,11 @@ export function MindMap(props: {
     let list = notes.find((n) => n.kind === "todo" && n.title === t("fromMap"));
     if (!list) {
       const { data, error } = await supabase.from("notes").insert({ board_id: boardId, kind: "todo", title: t("fromMap"), color: "mint" }).select().single();
-      if (error) return toast.error(error.message);
+      if (error) { toast.error(error.message); return; }
       list = data;
     }
     const { error } = await supabase.from("todo_items").insert({ note_id: list.id, board_id: boardId, text: node.text, position: Date.now() % 1e9 });
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     toast.success(t("addedToTodo"));
   };
 
