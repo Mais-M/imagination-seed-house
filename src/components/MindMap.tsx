@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction, type PointerEvent as RPE } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, Link2, ListPlus, Loader2, Maximize, Minus, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Check, GitBranch, Link2, ListPlus, Loader2, Maximize, Minus, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { bubbleBg, PALETTE } from "@/components/brand";
+import { bubbleBg, PALETTE, randomColor } from "@/components/brand";
 import { useI18n, type TKey } from "@/lib/i18n";
 import { requestBrainstorm } from "@/lib/brainstorm.functions";
 import type { Conn, Node, Note } from "@/lib/useBoard";
@@ -81,14 +81,21 @@ export function MindMap(props: {
     return { x: (cx - r.left - v.x) / v.k, y: (cy - r.top - v.y) / v.k };
   };
 
-  const addNode = async (x: number, y: number, text = t("addIdea")) => {
-    if (!canEdit) return;
-    const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+  const addNode = async (x: number, y: number, text = t("addIdea")): Promise<string | undefined> => {
+    if (!canEdit) return undefined;
+    const color = randomColor();
     const { data, error } = await supabase.from("nodes").insert({ board_id: boardId, text, color, x, y }).select().single();
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setNodes((l) => upsert(l, data));
     setSelected(data.id);
     setEditing(data.id);
+    return data.id as string;
+  };
+
+  const addBranch = async (parent: Node) => {
+    const a = Math.random() * Math.PI * 2;
+    const id = await addNode(parent.x + Math.cos(a) * 200, parent.y + Math.sin(a) * 160);
+    if (id) await connect(parent.id, id);
   };
 
   const updateNode = async (id: string, patch: Partial<Node>) => {
@@ -108,7 +115,7 @@ export function MindMap(props: {
   const connect = async (a: string, b: string) => {
     if (a === b || conns.some((c) => (c.from_node === a && c.to_node === b) || (c.from_node === b && c.to_node === a))) return;
     const { data, error } = await supabase.from("connections").insert({ board_id: boardId, from_node: a, to_node: b }).select().single();
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setConns((l) => upsert(l, data));
   };
 
@@ -122,11 +129,11 @@ export function MindMap(props: {
     let list = notes.find((n) => n.kind === "todo" && n.title === t("fromMap"));
     if (!list) {
       const { data, error } = await supabase.from("notes").insert({ board_id: boardId, kind: "todo", title: t("fromMap"), color: "mint" }).select().single();
-      if (error) return toast.error(error.message);
+      if (error) { toast.error(error.message); return; }
       list = data;
     }
     const { error } = await supabase.from("todo_items").insert({ note_id: list.id, board_id: boardId, text: node.text, position: Date.now() % 1e9 });
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     toast.success(t("addedToTodo"));
   };
 
@@ -227,7 +234,7 @@ export function MindMap(props: {
             return (
               <div
                 key={n.id}
-                className="pointer-events-auto absolute animate-bubble-pop"
+                className="pointer-events-auto absolute"
                 style={{ left: n.x, top: n.y, transform: "translate(-50%, -50%)" }}
                 onPointerDown={(e) => onNodeDown(e, n)}
                 onPointerMove={onMove}
@@ -239,7 +246,7 @@ export function MindMap(props: {
               >
                 <div
                   className={cn(
-                    "relative max-w-[240px] min-w-[110px] cursor-pointer rounded-[1.75rem] px-5 py-3 text-center font-display text-base font-medium leading-snug shadow-bubble transition-shadow",
+                    "relative animate-bubble-pop max-w-[240px] min-w-[110px] cursor-pointer rounded-[1.75rem] px-5 py-3 text-center font-display text-base font-medium leading-snug shadow-bubble transition-shadow",
                     suggested && "border-[3px] border-dashed border-ai opacity-95",
                     isSel && "ring-4 ring-primary ring-offset-2 ring-offset-canvas",
                     connectFrom === n.id && "ring-4 ring-ai",
@@ -254,6 +261,7 @@ export function MindMap(props: {
                   {editing === n.id ? (
                     <textarea
                       autoFocus
+                      onFocus={(e) => e.currentTarget.select()}
                       defaultValue={n.text}
                       onPointerDown={(e) => e.stopPropagation()}
                       onBlur={(e) => {
@@ -299,6 +307,9 @@ export function MindMap(props: {
           <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-full bg-card p-1 shadow-bubble animate-bubble-pop">
             <Button variant="ai" size="sm" disabled={aiBusy || sel.status === "suggested"} onClick={() => runAI(sel.id)}>
               {aiBusy ? <Loader2 className="animate-spin" /> : <Sparkles />} {t("expandAI")}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => addBranch(sel)}>
+              <GitBranch /> {t("branch")}
             </Button>
             <Button variant={connectFrom ? "secondary" : "ghost"} size="sm" onClick={() => setConnectFrom(connectFrom ? null : sel.id)}>
               <Link2 /> {t("connect")}

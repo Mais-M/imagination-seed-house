@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
-import { bubbleBg, PALETTE } from "@/components/brand";
+import { bubbleBg, PALETTE, randomColor } from "@/components/brand";
 import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/boards")({
@@ -40,16 +40,16 @@ function BoardsPage() {
   }, []);
 
   const create = async () => {
-    const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    const color = randomColor();
     const { data, error } = await supabase.from("boards").insert({ owner_id: user.id, title: t("untitled"), color }).select("id").single();
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     navigate({ to: "/board/$boardId", params: { boardId: data.id } });
   };
 
   const remove = async (id: string) => {
     if (!confirm(t("delete") + "?")) return;
     const { error } = await supabase.from("boards").delete().eq("id", id);
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setBoards((b) => b?.filter((x) => x.id !== id) ?? null);
   };
 

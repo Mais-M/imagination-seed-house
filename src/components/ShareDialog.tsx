@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
 
-type Member = { user_id: string; role: string; email?: string | null; name?: string | null };
+type Member = { user_id: string; role: string; email?: string | null | undefined; name?: string | null | undefined };
 
 export function ShareDialog({ boardId, isOwner }: { boardId: string; isOwner: boolean }) {
   const { t } = useI18n();
@@ -31,8 +31,8 @@ export function ShareDialog({ boardId, isOwner }: { boardId: string; isOwner: bo
 
   const invite = async () => {
     const { data, error } = await supabase.rpc("share_board", { _board: boardId, _email: email, _role: role });
-    if (error) return toast.error(error.message);
-    if (data === "not_found") return toast.error(t("notFoundUser"));
+    if (error) { toast.error(error.message); return; }
+    if (data === "not_found") { toast.error(t("notFoundUser")); return; }
     if (data === "ok") {
       toast.success(t("invited"));
       setEmail("");

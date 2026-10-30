@@ -57,3 +57,7 @@ export function bubbleBg(color: string) {
   if (/^#[0-9a-f]{3,8}$/i.test(color)) return color;
   return "var(--bubble-sky)";
 }
+
+export function randomColor(): string {
+  return PALETTE[Math.floor(Math.random() * PALETTE.length)] ?? "sky";
+}
