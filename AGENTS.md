@@ -8,3 +8,8 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## Architecture rules
+- Board access is enforced in the database (can_view_board / can_edit_board helpers in RLS); never rely on UI checks alone.
+- AI brainstorming goes only through the server function in src/lib/brainstorm.functions.ts calling the MAKE_WEBHOOK_URL secret; AI output is stored as nodes with status 'suggested' so it never overwrites user ideas or becomes a TODO automatically.
+- Live collaboration uses realtime subscriptions in src/lib/useBoard.ts; UI text lives in src/lib/i18n.tsx (en/he/ar, RTL for he/ar).

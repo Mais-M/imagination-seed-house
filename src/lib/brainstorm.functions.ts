@@ -71,7 +71,7 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
       .filter((s) => s.text);
     if (!rows.length) return { ok: true as const, added: 0 };
 
-    const R = 230;
+    const R = 320;
     const inserts = rows.map((s, i) => {
       const a = (i / rows.length) * Math.PI * 2 - Math.PI / 2;
       const type = TYPE_COLOR[s.type] ? s.type : "idea";
