@@ -74,6 +74,7 @@ export type Database = {
         Row: {
           board_id: string
           created_at: string
+          deleted_at: string | null
           from_node: string
           id: string
           is_ai: boolean
@@ -82,6 +83,7 @@ export type Database = {
         Insert: {
           board_id: string
           created_at?: string
+          deleted_at?: string | null
           from_node: string
           id?: string
           is_ai?: boolean
@@ -90,6 +92,7 @@ export type Database = {
         Update: {
           board_id?: string
           created_at?: string
+          deleted_at?: string | null
           from_node?: string
           id?: string
           is_ai?: boolean
@@ -126,6 +129,7 @@ export type Database = {
           color: string
           created_at: string
           created_by: string | null
+          deleted_at: string | null
           id: string
           is_ai: boolean
           note_id: string | null
@@ -142,6 +146,7 @@ export type Database = {
           color?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           is_ai?: boolean
           note_id?: string | null
@@ -158,6 +163,7 @@ export type Database = {
           color?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
           id?: string
           is_ai?: boolean
           note_id?: string | null

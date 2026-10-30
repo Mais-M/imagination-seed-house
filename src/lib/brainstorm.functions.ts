@@ -23,8 +23,8 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
     if (!canEdit) return { ok: false as const, error: "forbidden" as const, added: 0 };
 
     const [{ data: nodes }, { data: conns }] = await Promise.all([
-      supabase.from("nodes").select("id,text,color,x,y,is_ai,status").eq("board_id", data.boardId).limit(300),
-      supabase.from("connections").select("id,from_node,to_node").eq("board_id", data.boardId).limit(600),
+      supabase.from("nodes").select("id,text,color,x,y,is_ai,status").eq("board_id", data.boardId).is("deleted_at", null).limit(300),
+      supabase.from("connections").select("id,from_node,to_node").eq("board_id", data.boardId).is("deleted_at", null).limit(600),
     ]);
     const focus = nodes?.find((n) => n.id === data.focusNodeId);
     if (!focus) return { ok: false as const, error: "no_focus" as const, added: 0 };

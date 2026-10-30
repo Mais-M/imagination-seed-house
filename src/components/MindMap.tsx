@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction, type PointerEvent as RPE } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, GitBranch, Link2, ListPlus, Loader2, Maximize, Minus, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArchiveRestore, Check, Redo2, RotateCcw, Undo2, GitBranch, Link2, ListPlus, Loader2, Maximize, Minus, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ export function MindMap(props: {
   const [editing, setEditing] = useState<string | null>(null);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
   const drag = useRef<{ kind: "node" | "pan"; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
 
   // center initially
@@ -81,6 +82,61 @@ export function MindMap(props: {
     return { x: (cx - r.left - v.x) / v.k, y: (cy - r.top - v.y) / v.k };
   };
 
+  // ---- history (undo / redo) ----
+  type Entry = { undo: () => Promise<void>; redo: () => Promise<void> };
+  const past = useRef<Entry[]>([]);
+  const future = useRef<Entry[]>([]);
+  const [, bump] = useState(0);
+  const push = (e: Entry) => {
+    past.current.push(e);
+    if (past.current.length > 100) past.current.shift();
+    future.current = [];
+    bump((x) => x + 1);
+  };
+  const undo = async () => {
+    const e = past.current.pop();
+    if (!e) return void toast.message(t("nothingToUndo"));
+    await e.undo();
+    future.current.push(e);
+    bump((x) => x + 1);
+  };
+  const redo = async () => {
+    const e = future.current.pop();
+    if (!e) return void toast.message(t("nothingToRedo"));
+    await e.redo();
+    past.current.push(e);
+    bump((x) => x + 1);
+  };
+  const undoRef = useRef(undo);
+  undoRef.current = undo;
+  const redoRef = useRef(redo);
+  redoRef.current = redo;
+  useEffect(() => {
+    if (!canEdit) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); undoRef.current(); }
+      else if (k === "y" || (k === "z" && e.shiftKey)) { e.preventDefault(); redoRef.current(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canEdit]);
+
+  // raw writes (no history)
+  const writeNode = async (id: string, patch: Partial<Node>) => {
+    setNodes((l) => l.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+    const { error } = await supabase.from("nodes").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) toast.error(error.message);
+  };
+  const writeConn = async (id: string, patch: Partial<Conn>) => {
+    setConns((l) => l.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    const { error } = await supabase.from("connections").update(patch).eq("id", id);
+    if (error) toast.error(error.message);
+  };
+
   const addNode = async (x: number, y: number, text = t("addIdea")): Promise<string | undefined> => {
     if (!canEdit) return undefined;
     const color = randomColor();
@@ -89,7 +145,9 @@ export function MindMap(props: {
     setNodes((l) => upsert(l, data));
     setSelected(data.id);
     setEditing(data.id);
-    return data.id as string;
+    const id = data.id as string;
+    push({ undo: () => writeNode(id, { deleted_at: new Date().toISOString() }), redo: () => writeNode(id, { deleted_at: null }) });
+    return id;
   };
 
   const addBranch = async (parent: Node) => {
@@ -98,31 +156,63 @@ export function MindMap(props: {
     if (id) await connect(parent.id, id);
   };
 
-  const updateNode = async (id: string, patch: Partial<Node>) => {
-    setNodes((l) => l.map((n) => (n.id === id ? { ...n, ...patch } : n)));
-    const { error } = await supabase.from("nodes").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-    if (error) toast.error(error.message);
+  // recorded update: remembers previous values of the changed fields
+  const updateNode = async (id: string, patch: Partial<Node>, prevOverride?: Partial<Node>) => {
+    const cur = nodes.find((n) => n.id === id);
+    if (cur) {
+      const prev = prevOverride ?? (Object.fromEntries(Object.keys(patch).map((k) => [k, cur[k as keyof Node]])) as Partial<Node>);
+      push({ undo: () => writeNode(id, prev), redo: () => writeNode(id, patch) });
+    }
+    await writeNode(id, patch);
   };
 
+  const restoreNode = async (id: string) => {
+    await writeNode(id, { deleted_at: null });
+    toast.success(t("ideaRestored"));
+  };
+
+  // soft delete: keeps content, color, position, connections for restore
   const deleteNode = async (id: string) => {
+    setSelected(null);
+    const entry: Entry = { undo: () => writeNode(id, { deleted_at: null }), redo: () => writeNode(id, { deleted_at: new Date().toISOString() }) };
+    push(entry);
+    await entry.redo();
+    toast(t("ideaDeleted"), { action: { label: t("undo"), onClick: () => undoRef.current() } });
+  };
+
+  // pending AI suggestions that are dismissed are discarded (never kept)
+  const dismissSuggestion = async (id: string) => {
     setNodes((l) => l.filter((n) => n.id !== id));
     setConns((l) => l.filter((c) => c.from_node !== id && c.to_node !== id));
     setSelected(null);
+    await supabase.from("connections").delete().or(`from_node.eq.${id},to_node.eq.${id}`);
     const { error } = await supabase.from("nodes").delete().eq("id", id);
     if (error) toast.error(error.message);
   };
 
   const connect = async (a: string, b: string) => {
-    if (a === b || conns.some((c) => (c.from_node === a && c.to_node === b) || (c.from_node === b && c.to_node === a))) return;
-    const { data, error } = await supabase.from("connections").insert({ board_id: boardId, from_node: a, to_node: b }).select().single();
-    if (error) { toast.error(error.message); return; }
-    setConns((l) => upsert(l, data));
+    if (a === b) return;
+    const same = (c: Conn) => (c.from_node === a && c.to_node === b) || (c.from_node === b && c.to_node === a);
+    if (conns.some((c) => same(c) && !c.deleted_at)) return;
+    const old = conns.find((c) => same(c) && c.deleted_at);
+    let id: string;
+    if (old) {
+      id = old.id;
+      await writeConn(id, { deleted_at: null });
+    } else {
+      const { data, error } = await supabase.from("connections").insert({ board_id: boardId, from_node: a, to_node: b }).select().single();
+      if (error) { toast.error(error.message); return; }
+      setConns((l) => upsert(l, data));
+      id = data.id;
+    }
+    push({ undo: () => writeConn(id, { deleted_at: new Date().toISOString() }), redo: () => writeConn(id, { deleted_at: null }) });
   };
 
   const deleteConn = async (id: string) => {
     if (!canEdit) return;
-    setConns((l) => l.filter((c) => c.id !== id));
-    await supabase.from("connections").delete().eq("id", id);
+    const entry: Entry = { undo: () => writeConn(id, { deleted_at: null }), redo: () => writeConn(id, { deleted_at: new Date().toISOString() }) };
+    push(entry);
+    await entry.redo();
   };
 
   const makeTodo = async (node: Node) => {
@@ -188,7 +278,7 @@ export function MindMap(props: {
     const n = nodes.find((x) => x.id === d.id);
     if (!n) return;
     if (d.moved && canEdit) {
-      updateNode(n.id, { x: n.x, y: n.y });
+      updateNode(n.id, { x: n.x, y: n.y }, { x: d.ox, y: d.oy });
     } else if (connectFrom && connectFrom !== n.id) {
       connect(connectFrom, n.id);
       setConnectFrom(null);
@@ -196,7 +286,12 @@ export function MindMap(props: {
     } else setSelected(n.id);
   };
 
-  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const live = nodes.filter((n) => !n.deleted_at);
+  const cutoff = Date.now() - 30 * 864e5;
+  const trash = nodes
+    .filter((n) => n.deleted_at && new Date(n.deleted_at).getTime() > cutoff)
+    .sort((a, b) => (b.deleted_at! > a.deleted_at! ? 1 : -1));
+  const byId = new Map(live.map((n) => [n.id, n]));
   const sel = selected ? byId.get(selected) : undefined;
 
   return (
@@ -215,7 +310,7 @@ export function MindMap(props: {
       >
         <div className="pointer-events-none absolute left-0 top-0" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, transformOrigin: "0 0" }}>
           <svg className="absolute overflow-visible" style={{ left: 0, top: 0, width: 1, height: 1 }}>
-            {conns.map((c) => {
+            {conns.filter((c) => !c.deleted_at).map((c) => {
               const a = byId.get(c.from_node), b = byId.get(c.to_node);
               if (!a || !b) return null;
               const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 - 30;
@@ -228,7 +323,7 @@ export function MindMap(props: {
               );
             })}
           </svg>
-          {nodes.map((n) => {
+          {live.map((n) => {
             const suggested = n.status === "suggested";
             const isSel = n.id === selected;
             return (
@@ -284,7 +379,7 @@ export function MindMap(props: {
                       <button onPointerDown={(e) => e.stopPropagation()} onClick={() => updateNode(n.id, { status: "accepted" })} className="flex items-center gap-1 rounded-full bg-success px-2 py-0.5 text-xs font-semibold text-success-foreground">
                         <Check className="size-3" /> {t("accept")}
                       </button>
-                      <button onPointerDown={(e) => e.stopPropagation()} onClick={() => deleteNode(n.id)} className="flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-xs font-semibold">
+                      <button onPointerDown={(e) => e.stopPropagation()} onClick={() => dismissSuggestion(n.id)} className="flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-xs font-semibold">
                         <X className="size-3" /> {t("dismiss")}
                       </button>
                     </div>
@@ -302,6 +397,15 @@ export function MindMap(props: {
           <Button className="pointer-events-auto" onClick={() => { const p = toWorld(wrap.current!.getBoundingClientRect().left + wrap.current!.clientWidth / 2, wrap.current!.getBoundingClientRect().top + wrap.current!.clientHeight / 2); addNode(p.x + (Math.random() - 0.5) * 80, p.y + (Math.random() - 0.5) * 80); }}>
             <Plus /> {t("addIdea")}
           </Button>
+        )}
+        {canEdit && (
+          <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-card p-1 shadow-bubble">
+            <Button variant="ghost" size="icon" aria-label={t("undo")} title={`${t("undo")} (Ctrl+Z)`} disabled={!past.current.length} onClick={undo}><Undo2 className="rtl:-scale-x-100" /></Button>
+            <Button variant="ghost" size="icon" aria-label={t("redo")} title={`${t("redo")} (Ctrl+Y)`} disabled={!future.current.length} onClick={redo}><Redo2 className="rtl:-scale-x-100" /></Button>
+            <Button variant={showTrash ? "secondary" : "ghost"} size="sm" aria-label={t("recentlyDeleted")} onClick={() => setShowTrash((v) => !v)}>
+              <ArchiveRestore /> <span className="hidden sm:inline">{t("recentlyDeleted")}</span>{trash.length > 0 && <span className="rounded-full bg-muted px-1.5 text-xs">{trash.length}</span>}
+            </Button>
+          </div>
         )}
         {sel && canEdit && (
           <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-full bg-card p-1 shadow-bubble animate-bubble-pop">
@@ -328,6 +432,32 @@ export function MindMap(props: {
           </div>
         )}
       </div>
+
+      {showTrash && canEdit && (
+        <div className="absolute end-3 top-16 z-10 flex max-h-[70%] w-80 flex-col rounded-3xl bg-card p-3 shadow-bubble animate-bubble-pop">
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="font-display text-lg font-semibold">{t("recentlyDeleted")}</h3>
+            <Button variant="ghost" size="icon" aria-label={t("dismiss")} onClick={() => setShowTrash(false)}><X /></Button>
+          </div>
+          <p className="mb-2 text-xs text-muted-foreground">{t("deletedHint")}</p>
+          <div className="flex flex-col gap-2 overflow-y-auto">
+            {trash.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">{t("deletedEmpty")}</p>}
+            {trash.map((n) => (
+              <div key={n.id} className="flex items-center gap-2 rounded-2xl p-2" style={{ background: bubbleBg(n.color) }}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap gap-1">
+                    {n.is_ai && <span className="flex items-center gap-1 rounded-full bg-ai px-1.5 text-[10px] font-bold uppercase text-destructive-foreground"><Sparkles className="size-3" />{t(TYPE_LABEL[n.ai_type ?? "idea"] ?? "aiIdea")}</span>}
+                    {n.status === "suggested" && <span className="rounded-full bg-card px-1.5 text-[10px] font-bold uppercase">{t("pendingTag")}</span>}
+                  </div>
+                  <p className="truncate text-sm font-medium">{n.text}</p>
+                  <p className="text-[10px] opacity-70">{new Date(n.deleted_at!).toLocaleString(lang)}</p>
+                </div>
+                <Button size="sm" variant="secondary" onClick={() => restoreNode(n.id)}><RotateCcw /> {t("restore")}</Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {connectFrom && <div className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded-full bg-ai px-4 py-2 text-sm font-semibold text-destructive-foreground shadow-bubble">{t("connectHint")}</div>}
       {aiBusy && (
