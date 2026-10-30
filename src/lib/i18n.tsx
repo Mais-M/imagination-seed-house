@@ -20,7 +20,7 @@ const en = {
   feat4: "Live collaboration",
   myBoards: "My boards",
   sharedWithMe: "Shared with me",
-  newBoard: "New board",
+  newBoard: "Create New Board",
   untitled: "Untitled board",
   signOut: "Sign out",
   mindMap: "Mind map",
