@@ -1,0 +1,337 @@
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction, type PointerEvent as RPE } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { Check, Link2, ListPlus, Loader2, Maximize, Minus, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { bubbleBg, PALETTE } from "@/components/brand";
+import { useI18n, type TKey } from "@/lib/i18n";
+import { requestBrainstorm } from "@/lib/brainstorm.functions";
+import type { Conn, Node, Note } from "@/lib/useBoard";
+import { cn } from "@/lib/utils";
+
+type View = { x: number; y: number; k: number };
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+const TYPE_LABEL: Record<string, TKey> = { idea: "aiIdea", question: "aiQuestion", connection: "aiConnection", perspective: "aiPerspective" };
+
+function upsert<T extends { id: string }>(list: T[], row: T) {
+  return list.some((x) => x.id === row.id) ? list.map((x) => (x.id === row.id ? row : x)) : [...list, row];
+}
+
+export function MindMap(props: {
+  boardId: string;
+  userId: string;
+  canEdit: boolean;
+  nodes: Node[];
+  setNodes: Dispatch<SetStateAction<Node[]>>;
+  conns: Conn[];
+  setConns: Dispatch<SetStateAction<Conn[]>>;
+  notes: Note[];
+}) {
+  const { boardId, canEdit, nodes, setNodes, conns, setConns, notes } = props;
+  const { t, lang } = useI18n();
+  const brainstorm = useServerFn(requestBrainstorm);
+  const wrap = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const [selected, setSelected] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const drag = useRef<{ kind: "node" | "pan"; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+
+  // center initially
+  useEffect(() => {
+    const el = wrap.current;
+    if (el) setView({ x: el.clientWidth / 2, y: el.clientHeight / 2, k: 1 });
+  }, []);
+
+  // wheel zoom (non-passive)
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1);
+      const v = viewRef.current;
+      const next = clamp(v.k * Math.exp(-dy * 0.0015), 0.25, 2.5);
+      const r = el.getBoundingClientRect();
+      const px = e.clientX - r.left, py = e.clientY - r.top;
+      const f = next / v.k;
+      setView({ k: next, x: px - (px - v.x) * f, y: py - (py - v.y) * f });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const zoomBy = (f: number) => {
+    const el = wrap.current!;
+    const px = el.clientWidth / 2, py = el.clientHeight / 2;
+    setView((v) => {
+      const k = clamp(v.k * f, 0.25, 2.5);
+      const r = k / v.k;
+      return { k, x: px - (px - v.x) * r, y: py - (py - v.y) * r };
+    });
+  };
+
+  const toWorld = (cx: number, cy: number) => {
+    const r = wrap.current!.getBoundingClientRect();
+    const v = viewRef.current;
+    return { x: (cx - r.left - v.x) / v.k, y: (cy - r.top - v.y) / v.k };
+  };
+
+  const addNode = async (x: number, y: number, text = t("addIdea")) => {
+    if (!canEdit) return;
+    const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    const { data, error } = await supabase.from("nodes").insert({ board_id: boardId, text, color, x, y }).select().single();
+    if (error) return toast.error(error.message);
+    setNodes((l) => upsert(l, data));
+    setSelected(data.id);
+    setEditing(data.id);
+  };
+
+  const updateNode = async (id: string, patch: Partial<Node>) => {
+    setNodes((l) => l.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+    const { error } = await supabase.from("nodes").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) toast.error(error.message);
+  };
+
+  const deleteNode = async (id: string) => {
+    setNodes((l) => l.filter((n) => n.id !== id));
+    setConns((l) => l.filter((c) => c.from_node !== id && c.to_node !== id));
+    setSelected(null);
+    const { error } = await supabase.from("nodes").delete().eq("id", id);
+    if (error) toast.error(error.message);
+  };
+
+  const connect = async (a: string, b: string) => {
+    if (a === b || conns.some((c) => (c.from_node === a && c.to_node === b) || (c.from_node === b && c.to_node === a))) return;
+    const { data, error } = await supabase.from("connections").insert({ board_id: boardId, from_node: a, to_node: b }).select().single();
+    if (error) return toast.error(error.message);
+    setConns((l) => upsert(l, data));
+  };
+
+  const deleteConn = async (id: string) => {
+    if (!canEdit) return;
+    setConns((l) => l.filter((c) => c.id !== id));
+    await supabase.from("connections").delete().eq("id", id);
+  };
+
+  const makeTodo = async (node: Node) => {
+    let list = notes.find((n) => n.kind === "todo" && n.title === t("fromMap"));
+    if (!list) {
+      const { data, error } = await supabase.from("notes").insert({ board_id: boardId, kind: "todo", title: t("fromMap"), color: "mint" }).select().single();
+      if (error) return toast.error(error.message);
+      list = data;
+    }
+    const { error } = await supabase.from("todo_items").insert({ note_id: list.id, board_id: boardId, text: node.text, position: Date.now() % 1e9 });
+    if (error) return toast.error(error.message);
+    toast.success(t("addedToTodo"));
+  };
+
+  const runAI = async (id: string) => {
+    setAiBusy(true);
+    try {
+      const r = await brainstorm({ data: { boardId, focusNodeId: id, language: lang, requestType: "expand" } });
+      if (!r.ok) toast.error(r.error === "not_configured" ? t("aiNotConfigured") : t("aiError"));
+      else if (r.added === 0) toast.message(t("aiEmpty"));
+      else toast.success(`✨ ${r.added} ${t("aiAdded")}`);
+    } catch {
+      toast.error(t("aiError"));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  // pointer handling
+  const onBgDown = (e: RPE) => {
+    if (e.button !== 0) return;
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false };
+  };
+  const onNodeDown = (e: RPE, n: Node) => {
+    e.stopPropagation();
+    if (e.button !== 0 || editing === n.id) return;
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    drag.current = { kind: "node", id: n.id, sx: e.clientX, sy: e.clientY, ox: n.x, oy: n.y, moved: false };
+  };
+  const onMove = (e: RPE) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
+    if (d.kind === "pan") setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy }));
+    else if (canEdit && d.moved) {
+      const k = viewRef.current.k;
+      setNodes((l) => l.map((n) => (n.id === d.id ? { ...n, x: d.ox + dx / k, y: d.oy + dy / k } : n)));
+    }
+  };
+  const onUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    if (d.kind === "pan") {
+      if (!d.moved) {
+        setSelected(null);
+        setConnectFrom(null);
+      }
+      return;
+    }
+    const n = nodes.find((x) => x.id === d.id);
+    if (!n) return;
+    if (d.moved && canEdit) {
+      updateNode(n.id, { x: n.x, y: n.y });
+    } else if (connectFrom && connectFrom !== n.id) {
+      connect(connectFrom, n.id);
+      setConnectFrom(null);
+      setSelected(n.id);
+    } else setSelected(n.id);
+  };
+
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const sel = selected ? byId.get(selected) : undefined;
+
+  return (
+    <div className="relative h-full w-full overflow-hidden">
+      <div
+        ref={wrap}
+        className="canvas-dots absolute inset-0 cursor-grab touch-none select-none active:cursor-grabbing"
+        onPointerDown={onBgDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onDoubleClick={(e) => {
+          if (e.target !== e.currentTarget) return;
+          const p = toWorld(e.clientX, e.clientY);
+          addNode(p.x, p.y);
+        }}
+      >
+        <div className="pointer-events-none absolute left-0 top-0" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`, transformOrigin: "0 0" }}>
+          <svg className="absolute overflow-visible" style={{ left: 0, top: 0, width: 1, height: 1 }}>
+            {conns.map((c) => {
+              const a = byId.get(c.from_node), b = byId.get(c.to_node);
+              if (!a || !b) return null;
+              const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 - 30;
+              const d = `M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}`;
+              return (
+                <g key={c.id} className="pointer-events-auto cursor-pointer" onDoubleClick={() => deleteConn(c.id)}>
+                  <path d={d} stroke="transparent" strokeWidth={16} fill="none" />
+                  <path d={d} stroke={c.is_ai ? "var(--ai)" : "var(--foreground)"} strokeOpacity={c.is_ai ? 0.55 : 0.3} strokeWidth={3} strokeDasharray={c.is_ai ? "7 7" : undefined} fill="none" strokeLinecap="round" />
+                </g>
+              );
+            })}
+          </svg>
+          {nodes.map((n) => {
+            const suggested = n.status === "suggested";
+            const isSel = n.id === selected;
+            return (
+              <div
+                key={n.id}
+                className="pointer-events-auto absolute animate-bubble-pop"
+                style={{ left: n.x, top: n.y, transform: "translate(-50%, -50%)" }}
+                onPointerDown={(e) => onNodeDown(e, n)}
+                onPointerMove={onMove}
+                onPointerUp={onUp}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  if (canEdit) setEditing(n.id);
+                }}
+              >
+                <div
+                  className={cn(
+                    "relative max-w-[240px] min-w-[110px] cursor-pointer rounded-[1.75rem] px-5 py-3 text-center font-display text-base font-medium leading-snug shadow-bubble transition-shadow",
+                    suggested && "border-[3px] border-dashed border-ai opacity-95",
+                    isSel && "ring-4 ring-primary ring-offset-2 ring-offset-canvas",
+                    connectFrom === n.id && "ring-4 ring-ai",
+                  )}
+                  style={{ background: bubbleBg(n.color) }}
+                >
+                  {n.is_ai && (
+                    <span className="absolute -top-3 start-3 flex items-center gap-1 rounded-full bg-ai px-2 py-0.5 text-[10px] font-bold uppercase text-destructive-foreground">
+                      <Sparkles className="size-3" /> {t(TYPE_LABEL[n.ai_type ?? "idea"] ?? "aiIdea")}
+                    </span>
+                  )}
+                  {editing === n.id ? (
+                    <textarea
+                      autoFocus
+                      defaultValue={n.text}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onBlur={(e) => {
+                        setEditing(null);
+                        const v = e.target.value.trim();
+                        if (v && v !== n.text) updateNode(n.id, { text: v });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) (e.target as HTMLTextAreaElement).blur();
+                        if (e.key === "Escape") setEditing(null);
+                      }}
+                      className="w-48 resize-none bg-transparent text-center outline-none"
+                      rows={2}
+                    />
+                  ) : (
+                    <span className="whitespace-pre-wrap break-words">{n.text}</span>
+                  )}
+                  {suggested && canEdit && (
+                    <div className="mt-2 flex justify-center gap-1">
+                      <button onPointerDown={(e) => e.stopPropagation()} onClick={() => updateNode(n.id, { status: "accepted" })} className="flex items-center gap-1 rounded-full bg-success px-2 py-0.5 text-xs font-semibold text-success-foreground">
+                        <Check className="size-3" /> {t("accept")}
+                      </button>
+                      <button onPointerDown={(e) => e.stopPropagation()} onClick={() => deleteNode(n.id)} className="flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-xs font-semibold">
+                        <X className="size-3" /> {t("dismiss")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* toolbar */}
+      <div className="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-center justify-center gap-2 px-3">
+        {canEdit && (
+          <Button className="pointer-events-auto" onClick={() => { const p = toWorld(wrap.current!.getBoundingClientRect().left + wrap.current!.clientWidth / 2, wrap.current!.getBoundingClientRect().top + wrap.current!.clientHeight / 2); addNode(p.x + (Math.random() - 0.5) * 80, p.y + (Math.random() - 0.5) * 80); }}>
+            <Plus /> {t("addIdea")}
+          </Button>
+        )}
+        {sel && canEdit && (
+          <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-full bg-card p-1 shadow-bubble animate-bubble-pop">
+            <Button variant="ai" size="sm" disabled={aiBusy || sel.status === "suggested"} onClick={() => runAI(sel.id)}>
+              {aiBusy ? <Loader2 className="animate-spin" /> : <Sparkles />} {t("expandAI")}
+            </Button>
+            <Button variant={connectFrom ? "secondary" : "ghost"} size="sm" onClick={() => setConnectFrom(connectFrom ? null : sel.id)}>
+              <Link2 /> {t("connect")}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => makeTodo(sel)}>
+              <ListPlus /> {t("toTodo")}
+            </Button>
+            <div className="flex gap-1 px-1">
+              {PALETTE.map((c) => (
+                <button key={c} aria-label={c} onClick={() => updateNode(sel.id, { color: c })} className={cn("size-5 rounded-full border-2 border-card", sel.color === c && "ring-2 ring-foreground")} style={{ background: bubbleBg(c) }} />
+              ))}
+            </div>
+            <Button variant="ghost" size="icon" aria-label={t("delete")} onClick={() => deleteNode(sel.id)}>
+              <Trash2 className="text-destructive" />
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {connectFrom && <div className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded-full bg-ai px-4 py-2 text-sm font-semibold text-destructive-foreground shadow-bubble">{t("connectHint")}</div>}
+      {aiBusy && (
+        <div className="absolute bottom-16 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-card px-4 py-2 text-sm font-semibold shadow-bubble">
+          <Sparkles className="size-4 animate-spin text-ai" /> {t("aiThinking")}
+        </div>
+      )}
+
+      <div className="absolute bottom-3 end-3 flex gap-1 rounded-full bg-card p-1 shadow-bubble">
+        <Button variant="ghost" size="icon" aria-label={t("zoomOut")} onClick={() => zoomBy(1 / 1.2)}><Minus /></Button>
+        <span className="grid w-12 place-items-center text-xs font-semibold">{Math.round(view.k * 100)}%</span>
+        <Button variant="ghost" size="icon" aria-label={t("zoomIn")} onClick={() => zoomBy(1.2)}><Plus /></Button>
+        <Button variant="ghost" size="icon" aria-label={t("resetView")} onClick={() => setView({ x: wrap.current!.clientWidth / 2, y: wrap.current!.clientHeight / 2, k: 1 })}><Maximize /></Button>
+      </div>
+      <p className="pointer-events-none absolute bottom-4 start-4 hidden max-w-md text-xs text-muted-foreground md:block">{t("canvasHint")}</p>
+    </div>
+  );
+}
