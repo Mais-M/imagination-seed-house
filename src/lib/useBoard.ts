@@ -58,8 +58,13 @@ export function useBoard(boardId: string) {
       .on("postgres_changes", { event: "*", schema: "public", table: "connections", filter: f }, (p) => setConns((l) => applyChange(l, p)))
       .on("postgres_changes", { event: "*", schema: "public", table: "notes", filter: f }, (p) => setNotes((l) => applyChange(l, p)))
       .on("postgres_changes", { event: "*", schema: "public", table: "todo_items", filter: f }, (p) => setTodos((l) => applyChange(l, p)))
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") reload();
+      });
+    const onVis = () => { if (document.visibilityState === "visible") reload(); };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
+      document.removeEventListener("visibilitychange", onVis);
       supabase.removeChannel(ch);
     };
   }, [boardId, reload]);

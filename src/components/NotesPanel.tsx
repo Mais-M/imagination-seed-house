@@ -7,6 +7,7 @@ import { bubbleBg, PALETTE, randomColor } from "@/components/brand";
 import { useI18n } from "@/lib/i18n";
 import type { Note, Todo, Node } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
+import { SyncedInput, SyncedTextarea } from "@/components/SyncedField";
 
 export function TodoCheck({ done, onToggle, disabled }: { done: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
@@ -125,11 +126,11 @@ export function NotesPanel(props: {
         {note ? (
           <div key={note.id} className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
-              <input
-                defaultValue={note.title}
+              <SyncedInput
+                value={note.title}
                 readOnly={!canEdit}
                 placeholder={t("title")}
-                onBlur={(e) => e.target.value !== note.title && patchNote(note.id, { title: e.target.value })}
+                onSave={(v) => patchNote(note.id, { title: v })}
                 className="min-w-0 flex-1 bg-transparent font-display text-3xl font-bold outline-none"
               />
               {canEdit && (
@@ -145,11 +146,11 @@ export function NotesPanel(props: {
               )}
             </div>
             {note.kind === "note" ? (
-              <textarea
-                defaultValue={note.content}
+              <SyncedTextarea
+                value={note.content}
                 readOnly={!canEdit}
                 placeholder={t("write")}
-                onBlur={(e) => e.target.value !== note.content && patchNote(note.id, { content: e.target.value })}
+                onSave={(v) => patchNote(note.id, { content: v })}
                 className="min-h-[50vh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none"
               />
             ) : (
@@ -157,10 +158,10 @@ export function NotesPanel(props: {
                 {items.map((it) => (
                   <li key={it.id} className="group flex items-center gap-3 rounded-xl bg-muted px-3 py-2">
                     <TodoCheck done={it.done} disabled={!canEdit} onToggle={() => patchTodo(it.id, { done: !it.done })} />
-                    <input
-                      defaultValue={it.text}
+                    <SyncedInput
+                      value={it.text}
                       readOnly={!canEdit}
-                      onBlur={(e) => e.target.value !== it.text && patchTodo(it.id, { text: e.target.value })}
+                      onSave={(v) => patchTodo(it.id, { text: v })}
                       className={cn("flex-1 bg-transparent outline-none", it.done && "text-muted-foreground line-through")}
                     />
                     {canEdit && (
