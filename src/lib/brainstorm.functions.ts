@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { humanizeIds } from "@/lib/humanizeIds";
 
 const Input = z.object({
   boardId: z.string().uuid(),
@@ -28,6 +29,7 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
     ]);
     const focus = nodes?.find((n) => n.id === data.focusNodeId);
     if (!focus) return { ok: false as const, error: "no_focus" as const, added: 0 };
+    const labels = new Map((nodes ?? []).map((n) => [n.id.toLowerCase(), n.text]));
 
     const request_id = crypto.randomUUID();
     let body: unknown;
@@ -44,7 +46,7 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
           request_type: data.requestType,
           focus_node: { id: focus.id, text: focus.text },
           existing_nodes: (nodes ?? []).filter((n) => n.status === "accepted").map((n) => ({ id: n.id, text: n.text, is_ai: n.is_ai })),
-          connections: (conns ?? []).map((c) => ({ from: c.from_node, to: c.to_node })),
+          connections: (conns ?? []).map((c) => ({ from: c.from_node, to: c.to_node, from_text: labels.get(c.from_node) ?? "", to_text: labels.get(c.to_node) ?? "" })),
         }),
       });
       if (!res.ok) {
@@ -64,7 +66,7 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
     const rows = list
       .map((s: Record<string, unknown>) => ({
         type: String(s?.["type"] ?? "idea").toLowerCase(),
-        text: String(s?.["text"] ?? "").slice(0, 500).trim(),
+        text: humanizeIds(String(s?.["text"] ?? ""), labels).slice(0, 500).trim(),
         color: typeof s?.["color"] === "string" ? s["color"] : "",
         related: typeof s?.["related_node_id"] === "string" ? s["related_node_id"] : typeof s?.["related_node"] === "string" ? s["related_node"] : null,
       }))
