@@ -1,63 +1,72 @@
-# תוכנית: תיקון UUID בהצעות AI + AI Insights מתוך Notes
+# תוכנית בשלבים: תיקון UUID + AI Insights from Notes
 
-## 1. ממצאים טכניים (מבוססים על הקוד)
+כל שלב יאושר בנפרד. אף שלב לא משנה את ה-DB, ואף שלב ב-Lovable לא משנה את Make.
 
-**איך Spark with AI עובד היום** (`src/lib/brainstorm.functions.ts`):
-- server function מאומת (`requireSupabaseAuth`), בודק `can_edit_board`, ושולח ל-`MAKE_WEBHOOK_URL` payload עם `focus_node {id, text}`, `existing_nodes [{id, text, is_ai}]` ו-`connections [{from, to}]` — כלומר רק IDs, ללא labels.
-- התשובה נקראת מ-`suggestions[]` עם השדות `type`, `text`, `color`, `related_node_id`. ה-`text` נשמר **כמו שהוא**, בלי שום עיבוד, כ-node עם `status: 'suggested'`.
+## ממצאים בקצרה
 
-**איך Notes נשמרים**: טבלת `notes` (`title`, `content`, `kind`, `color`). "Add to mind map" (`toMap` ב-`NotesPanel.tsx`) מעתיק רק את `title` (או 80 התווים הראשונים) — ה-body לא מגיע ל-AI בשום שלב. אין כרגע שום פעולת AI במסך Notes.
+- Spark שולח ל-`MAKE_WEBHOOK_URL` את `focus_node {id, text}`, `existing_nodes [{id, text, is_ai}]`, `connections [{from, to}]` — ב-connections יש רק UUIDs, בלי טקסט.
+- טקסט ההצעה מ-Make נשמר כמו שהוא, בלי סינון. לכן UUID שהמודל כותב בטקסט מוצג למשתמש.
+- את ה-prompt ב-Make אני לא יכולה לראות; צריך לבדוק שם אם הוא מבקש להזכיר את ה-node הקשור.
+- ה-body של note אף פעם לא נשלח ל-AI; "Add to map" מעתיק רק את הכותרת.
 
-## 2. סיבת השורש המשוערת ל-UUID
+---
 
-- **מה מאומת בקוד**: אנחנו שולחים ל-Make את ה-IDs של ה-nodes, וב-`connections` אנחנו שולחים **רק** IDs (`from`/`to`) בלי טקסט. גם אנחנו מבקשים ממנו (דרך החוזה) להחזיר `related_node_id`. לכן המודל "רואה" UUIDs ולפעמים מכניס אותם לטקסט ה-CONNECTION.
-- **מה לא מאומת**: את ה-prompt שבתוך Make אי אפשר לבדוק מכאן. ייתכן שהוא גם מבקש במפורש להזכיר את ה-node הקשור. זה צריך בדיקה אצלך ב-Make.
-- **אחריות האפליקציה**: גם אם Make מחזיר UUID, הקוד שלנו מציג את הטקסט בלי סינון — כאן אפשר לתקן בבטחה בלי לגעת ב-Make.
+## שלב 1 — Lovable בלבד, בלי שינוי ב-Make (תיקון UUID)
 
-## 3. תיקון מינימלי ל-UUID (Lovable בלבד)
+בטוח לבד, כי מוסיף רק שדות ועיבוד אחרי התשובה.
 
-1. ב-payload: להוסיף `from_text` / `to_text` ל-`connections` (השדות הקיימים נשארים — תאימות לאחור).
-2. בתשובה: לפני השמירה, להחליף כל UUID בטקסט בשם ה-node בגרשיים (למשל `"Bees"`); UUID לא מוכר יוסר. ה-`related_node_id` הפנימי נשמר ומשמש לחיבור כמו היום.
-- לא נדרש שינוי ב-Make. אופציונלי: להוסיף ל-prompt ב-Make "never mention IDs, refer to ideas by their text".
+1. **Request** — שדות קיימים נשארים כמו שהם; נוספים שדות שאפשר להתעלם מהם:
+   - `connections[]`: `{from, to}` (קיים) + `from_text`, `to_text` (חדש).
+2. **Response** — אותו חוזה בדיוק: `suggestions[] {type, text, color?, related_node_id? | related_node?}`.
+3. **סינון לפני שמירה**: כל UUID בתוך `text` יוחלף בשם ה-node בגרשיים (`"Bees"`); UUID לא מוכר יוסר וינוקו רווחים מיותרים.
+4. **UUIDs פנימיים נשארים**: `related_node_id` עדיין משמש ליצירת החיבור, ו-`source_node_id`, `from_node` ו-`to_node` נשמרים כמו היום. רק הטקסט שהמשתמש רואה מסונן.
+5. בדיקת unit ל-`humanizeIds`.
 
-## 4. עיצוב AI Insights from Notes
+**למה Spark ממשיך לעבוד**: אותו URL, אותו `request_type: "expand"`, אותם שדות; Make שמתעלם משדות לא מוכרים לא מושפע.
 
-- כפתור חדש **"✨ Insights"** בעורך ה-note (רק ל-`kind = note`, רק למי שיש `canEdit`). תוכן נשלח ל-AI רק בלחיצה מפורשת.
-- server function חדש `requestNoteInsights` בקובץ הקיים `brainstorm.functions.ts`: מאמת user, בודק `can_view_board` דרך RLS, טוען את ה-note מה-DB (לא סומך על טקסט מהלקוח), ושולח ל-**אותו** `MAKE_WEBHOOK_URL` עם `request_type: "note_insights"`, `language`, ו-`note {title, content}` (עד ~8,000 תווים) + שמות ה-nodes הקיימים כהקשר.
-- תשובה צפויה: אותו פורמט `suggestions[]` עם 2–4 פריטים מסוג idea / question / connection / perspective (ניתן להוסיף `theme` / `gap` שימופו לצבעים קיימים).
-- תצוגה: כרטיסי בועות צבעוניים מתחת לעורך, עם תגית סוג. לכל insight: **Add to map** (יוצר node עם `is_ai: true`, `status: 'suggested'` — כך שב-Mind Map עדיין צריך Keep/Dismiss), **Dismiss**, ואפשרות עריכת הטקסט לפני הוספה. אין יצירת TODO אוטומטית.
-- ה-insights זמניים (לא נשמרים ב-DB עד ש-"Add to map") — אין שינוי schema.
-- שפה: `language` נשלח מה-i18n הנוכחי; כרטיסים עם `dir="auto"`; מחרוזות UI חדשות ב-en/he/ar.
-- שגיאות: `not_configured` / `upstream` / תשובה ריקה → toast ידידותי.
+---
 
-## 5. שינויים נדרשים ב-Make (בנפרד, אצלך)
+## שלב 2 — Make בלבד (מתבצע על ידך, לפני שלב 3)
 
-Make אינו נגיש לי, לכן זה דורש אימות:
-- להוסיף Router לפי `request_type`: ערך `"note_insights"` → prompt שמנתח את `note.content` ומחזיר 2–4 insights באותו JSON (`suggestions: [{type, text}]`), בשפת `language`. הענף הקיים של Spark נשאר כפי שהוא.
-- אם Make כרגע מתעלם מ-`request_type`, הכפתור יחזיר הצעות רגילות שמבוססות על nodes — לכן צריך לבדוק את זה לפני ההדגמה.
-- אופציונלי: הוראה לא להזכיר IDs.
+Lovable לא נוגע בזה. מומלץ לשכפל את ה-scenario לגיבוי לפני השינוי.
 
-## 6. סיכונים
+1. להוסיף **Router** אחרי ה-Webhook:
+   - נתיב A: `request_type` שונה מ-`note_insights` (כולל `expand` וריק) → **הזרימה הקיימת, בלי שינוי**. זה הנתיב שמוגדר כ-fallback.
+   - נתיב B: `request_type = note_insights` → מודול OpenAI חדש עם prompt שמנתח את `note.content`.
+2. התשובה בנתיב B — אותו פורמט:
+   `{"suggestions":[{"type":"idea|question|connection|perspective","text":"..."}]}` עם 2–4 פריטים, בשפה שב-`language`, בלי IDs.
+3. אופציונלי בנתיב A: להוסיף ל-prompt "Refer to ideas by their text, never by ID".
+4. **בדיקה ב-Make לפני שלב 3**: לשלוח בקשת `expand` רגילה ולוודא שהתשובה זהה לקודם; לשלוח בקשת `note_insights` לדוגמה (אתן לך JSON מוכן) ולוודא שחוזרים 2–4 insights.
 
-- שינוי ה-payload תואם לאחור (שדות נוספים בלבד) — Spark הקיים לא נפגע.
-- סינון UUID עלול להחליף UUID לגיטימי בטקסט — בפועל לא קורה בהצעות יצירתיות.
-- ללא עדכון Make, Insights לא יתבססו על ה-body — זה התלות העיקרית.
-- אין שינוי בסנכרון realtime, Undo/Redo, Recently Deleted, הרשאות או DB.
+**דברים שצריך לבדוק אצלך**: האם יש כבר מסנן על `request_type`, ואיזה שדות ה-prompt קורא היום.
 
-## 7. שלבי מימוש
+---
 
-1. `brainstorm.functions.ts`: הוספת `from_text`/`to_text` + פונקציית `humanizeIds` על טקסט ההצעות.
-2. `brainstorm.functions.ts`: `requestNoteInsights` חדש.
-3. `NotesPanel.tsx`: כפתור Insights, מצב טעינה, כרטיסי insights עם Add to map / Dismiss / edit.
-4. `i18n.tsx`: מפתחות חדשים ב-en/he/ar.
-5. בדיקת unit קטנה ל-`humanizeIds`.
+## שלב 3 — Lovable, אחרי ששלב 2 נבדק (AI Insights)
 
-## 8. צ'קליסט בדיקות
+1. **server function חדש** `requestNoteInsights` (לא משנה את `requestBrainstorm`):
+   - מאמת user ובודק `can_edit_board` (viewer נדחה בשרת).
+   - קורא את ה-note מה-DB לפי `noteId` (לא סומך על טקסט מהלקוח) ומוודא שהוא שייך לאותו board.
+   - שולח ל-אותו `MAKE_WEBHOOK_URL`:
+     - `request_id`, `user_id`, `board_id`, `language`, `request_type: "note_insights"`
+     - `note: {title, content}` — ה-**body המלא**, עד ~8,000 תווים
+     - `existing_ideas: [text]` — רק טקסטים, בלי IDs
+   - מסנן UUID ומגביל ל-4 insights; **לא שומר כלום ב-DB**.
+2. **ממשק ב-NotesPanel**: כפתור "✨ Insights" בעורך note (רק `kind = note`, רק עם הרשאת עריכה). שום דבר לא נשלח בלי לחיצה.
+3. כרטיסי insights צבעוניים לפי סוג, עם `dir="auto"`. לכל כרטיס: **עריכה**, **Dismiss**, **Add to map** — יוצר bubble עם `status: 'suggested'`, כך שעדיין צריך Keep/Dismiss במפה. אין TODO אוטומטי.
+4. מחרוזות UI חדשות ב-en/he/ar; הודעות שגיאה ידידותיות (`not_configured`, `upstream`, תשובה ריקה).
+5. **הגנה**: אם Make עדיין לא עודכן ומחזיר הצעות רגילות, הן יוצגו כ-insights בלבד ולא ישפיעו על Spark.
 
-- Spark על node עם חיבורים → אף הצעת CONNECTION לא מכילה UUID; הקו עדיין מחובר ל-node הנכון.
-- Keep/Dismiss, Undo/Redo, Recently Deleted עובדים כמו קודם.
-- Note עם body ארוך → Insights מחזיר 2–4 כרטיסים שקשורים לתוכן ולא רק לכותרת (אחרי עדכון Make).
-- Add to map → bubble מסוג suggested מופיע; לא נוצר TODO.
-- Viewer לא רואה את הכפתור, והשרת דוחה אותו.
-- בדיקה בעברית ובערבית (RTL ושפת התשובה).
-- רענון: נתונים קיימים לא השתנו.
+---
+
+## סיכונים
+
+- שלב 1: מוסיף שדות בלבד, אז הסיכון נמוך. החלפת UUID נוגעת רק למחרוזות בפורמט UUID.
+- שלב 2: עיקר הסיכון נמצא ב-Router. ה-fallback לנתיב הקיים והגיבוי מצמצמים אותו.
+- שלב 3: קוד חדש ונפרד, בלי שינוי ב-realtime, Undo/Redo, Recently Deleted, הרשאות או DB.
+
+## צ'קליסט בדיקות
+
+- **אחרי שלב 1**: Spark על node עם חיבורים → אין UUID בטקסט, והקו מחובר ל-node הנכון; Keep/Dismiss ו-Undo עובדים.
+- **אחרי שלב 2**: בקשת `expand` מחזירה את מה שחזר קודם; בקשת `note_insights` מחזירה 2–4 פריטים.
+- **אחרי שלב 3**: note עם body ארוך → insights שקשורים לתוכן ולא לכותרת; Add to map → bubble מסוג suggested; viewer לא יכול; עברית וערבית (RTL ושפת התשובה); Spark עדיין עובד; רענון לא משנה נתונים קיימים.
