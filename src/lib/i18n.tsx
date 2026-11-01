@@ -67,7 +67,6 @@ const en = {
   addedToMap: "Added to the mind map",
   insights: "Insights",
   analyzing: "Analyzing the note…",
-  dismiss: "Dismiss",
   insightsError: "Couldn't get insights right now. Try again later.",
   insightsEmpty: "Nothing to analyze yet. Write something in the note first.",
   noInsights: "No suggestions came back.",
