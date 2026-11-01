@@ -1,54 +1,58 @@
-# תוכנית: פעולת "Insights" אופציונלית ל-Notes (תוכנית בלבד)
+# תוכנית: שלב B בלבד, פעולת "Insights" ל-Notes
 
-אישור התוכנית הזו לא יפעיל שום שינוי ב-Make. כל שלב למטה דורש אישור נפרד.
+אישור התוכנית הזו מאשר את שלב B בלבד. שלב C לא ימומש. הסצנריו המקורי ב-Make וה-webhook שלו לא ישתנו.
 
-## עיקרון מרכזי: הפרדה מלאה מ-Spark with AI
+## הפרדה מוחלטת מ-Spark with AI
 
-- Spark with AI ממשיך להשתמש ב-secret הקיים `MAKE_WEBHOOK_URL` ובקובץ `src/lib/brainstorm.functions.ts`. שני הדברים לא משתנים בכלל.
-- Insights מקבל secret חדש ונפרד, `MAKE_INSIGHTS_WEBHOOK_URL`, שמצביע על ה-webhook של סצנריו ה-COPY בלבד.
-- יש server function חדש ונפרד: `src/lib/insights.functions.ts`.
-- לכן route ה-`expand` לא יכול להישבר: הוא לא נוגע בקוד, ב-URL או ב-payload של Insights. אם Insights נכשל, Spark ממשיך לעבוד.
+- Spark with AI ממשיך להשתמש ב-`MAKE_WEBHOOK_URL` וב-`src/lib/brainstorm.functions.ts`. שניהם לא משתנים.
+- Insights משתמש ב-secret חדש, `MAKE_INSIGHTS_WEBHOOK_URL`, שמצביע רק על ה-webhook של ה-COPY. אבקש את הערך דרך חלון ה-secret המאובטח.
+- Insights מקבל server function נפרד: `src/lib/insights.functions.ts`. אין שום קוד משותף עם route ה-`expand`, חוץ מהפונקציה `humanizeIds` שקוראת בלבד.
 
-## שלב A: חיבור ובדיקה של סצנריו ה-COPY (בלי שינוי קוד באפליקציה)
+## מה ייבנה
 
-1. את מפעילה את ה-COPY ב-Make במצב "Run once", או מעבירה אותו ל-Active זמנית. הסצנריו המקורי לא נוגע.
-2. מוסיפים את ה-secret `MAKE_INSIGHTS_WEBHOOK_URL` עם כתובת ה-webhook של ה-COPY. אבקש את הערך דרך חלון ה-secret המאובטח.
-3. בדיקה מבודדת: קריאה ישירה ל-webhook עם payload לדוגמה בשלוש השפות. מוודאים שהתשובה היא `{ "suggestions": [{ "type", "text" }] }` עם ארבעת הסוגים.
-4. אם מבנה התשובה שונה מזה, אעצור ואתאר את ההבדל לפני שאכתוב קוד.
+**Server function `requestNoteInsights`** (`requireSupabaseAuth`, ההרשאות נאכפות דרך RLS):
+- מקבל: `boardId`, `noteId`, `language`.
+- בודק `can_edit_board`. בלי הרשאה, מוחזרת שגיאה.
+- קורא את ה-note מה-DB בשרת, ולא מהדפדפן: title ו-content המלא. ב-note מסוג TODO, גוף ה-note הוא טקסט כל הפריטים.
+- note בלי גוף לא נשלח, ומוצגת הודעה "אין תוכן לניתוח". כך לעולם לא מנתחים רק כותרת.
+- שולח ל-COPY: `request_type: "note_insights"`, `language`, `note_title`, `note_body` (עד 8000 תווים).
+- מנרמל את התשובה: עד 8 הצעות, ה-type מנורמל ל-idea/question/connection/perspective, טקסט ריק מסונן, ומפעיל `humanizeIds`.
+- **לא כותב כלום ל-DB.**
+- אם ה-secret חסר, מוחזרת השגיאה `not_configured`.
 
-## שלב B: Lovable, כשה-COPY כבר עובד
-
-**Server function** `requestNoteInsights` (`requireSupabaseAuth`):
-- Input: `boardId`, `noteId`, `language`.
-- בודק `can_edit_board`, וקורא את ה-note מהשרת: title, content, ובמקרה של TODO גם טקסט הפריטים. לא סומכים על טקסט שמגיע מהדפדפן.
-- שולח ל-Make: `request_type: "note_insights"`, `language`, `note_title`, `note_body` (התוכן המלא, עם תקרה של 8000 תווים).
-- מסנן את התשובה: עד 4–8 הצעות, ה-type מנורמל ל-idea/question/connection/perspective, ומפעיל `humanizeIds` ליתר ביטחון.
-- **לא כותב כלום ל-DB.** הוא רק מחזיר את ההצעות.
-
-**UI ב-NotesPanel**:
-- כפתור "Insights" ליד "Add to mind map", רק למי שיש לו הרשאת עריכה.
-- פאנל שמציג כרטיסי הצעה בצבעי הסוג הקיימים (lime/sky/lilac/peach). כל כרטיס כולל:
-  - **עריכה:** הטקסט ניתן לעריכה לפני הוספה.
+**UI ב-NotesPanel:**
+- כפתור "Insights" ליד "Add to mind map", רק למשתמש עם הרשאת עריכה.
+- כרטיסי הצעה בצבעי הסוג הקיימים, עם `dir="auto"` כדי לתמוך ב-RTL.
+- בכל כרטיס:
+  - **עריכה:** עריכת הטקסט במקום.
   - **Dismiss:** מסיר את הכרטיס מהמסך בלבד.
-  - **Add to mind map:** יוצר bubble אחד, ורק בלחיצה מפורשת.
-- ההצעות שמורות ב-state מקומי בלבד. רענון מוחק אותן, ושום דבר לא נשמר בלי פעולה שלך.
+  - **Add to mind map:** בלחיצה מפורשת בלבד.
+- ההצעות נשמרות ב-state מקומי בלבד, ונעלמות ברענון. ה-note עצמו לא משתנה אף פעם.
 
-**הוספה למפה**: אותו insert שקיים היום ב-`toMap`: `status: "accepted"`, `is_ai: true`, `ai_type` לפי הסוג, צבע הסוג, ו-`note_id` לקישור ל-note. המיקום אקראי ליד המרכז, כך שהתזוזה העצמאית של bubbles נשמרת. Realtime מעדכן את המשתתפים האחרים כרגיל.
+**Add to mind map:** insert של node אחד, כמו `toMap` הקיים: `status: "accepted"`, `is_ai: true`, `ai_type`, צבע הסוג, `note_id` ומיקום אקראי. ה-bubble זז באופן עצמאי, Undo ו-Recently Deleted עובדים עליו, ו-Realtime מעדכן את השותפים.
 
-**שפות**: מפתחות i18n חדשים ב-en/he/ar (insights, analyzing, addToMap, dismiss, insightsError, noInsights). כרטיסי ההצעות משתמשים ב-`dir="auto"`, כך שעברית וערבית מוצגות נכון.
+**שפות:** מפתחות i18n חדשים ב-en/he/ar.
+
+## הגנה על משתמשי production
+
+- הקוד יופיע רק בתצוגה המקדימה. **לא אפרסם (Publish) את האפליקציה** עד שתאשרי שהבדיקות עברו. האתר שפורסם ממשיך להריץ את הגרסה הנוכחית, בלי Insights.
+- כפתור Insights מוסתר כש-`MAKE_INSIGHTS_WEBHOOK_URL` לא מוגדר. כך גם אם יהיה פרסום מוקדם בטעות, הפיצ'ר לא יעבוד בלי ה-secret.
+- שימי לב: ה-DB משותף לתצוגה המקדימה ולאתר שפורסם. לכן הבדיקות ייעשו על board בדיקה ייעודי.
+
+## חלון בדיקה עם ה-COPY פעיל זמנית
+
+1. אני מממשת את הקוד ומריצה בדיקות unit לנרמול. בשלב הזה אין קריאות ל-Make.
+2. את מוסיפה את `MAKE_INSIGHTS_WEBHOOK_URL`.
+3. את מעבירה את ה-COPY ל-Active, או משתמשת ב-"Run once". הסצנריו המקורי לא נוגע.
+4. בדיקות בתצוגה המקדימה, על board בדיקה:
+   - note ארוך שהמידע החשוב בו נמצא רק בגוף: ההצעות מתייחסות לגוף.
+   - עריכה, Dismiss ו-Add: נוצר bubble צבעוני, וה-note לא השתנה.
+   - רענון: ה-bubble נשמר.
+   - בדיקה בעברית ובערבית.
+   - Spark with AI על node רגיל עדיין עובד כמו קודם.
+5. את מחזירה את ה-COPY ל-Inactive. אחר כך אני מוודאת שכשה-COPY כבוי, Insights מציג הודעת שגיאה ידידותית, Spark ממשיך לעבוד, ושום דבר לא נכתב.
+6. אני עוצרת ומדווחת. פרסום יקרה רק באישור נפרד שלך.
 
 ## מה לא ישתנה
 
-Spark with AI ו-`MAKE_WEBHOOK_URL`, הסצנריו המקורי ב-Make, מבנה ה-DB וה-RLS, Google sign-in, realtime, תוכן ה-notes וה-TODOs (Insights לא כותב אליהם), Undo/Redo ו-Recently Deleted.
-
-## בדיקות אחרי שלב B
-
-- בדיקת unit לנרמול התשובה: סוג לא מוכר הופך ל-idea, טקסט ריק מסונן, UUID מוסר.
-- בתצוגה המקדימה: Insights על note ארוך שהמידע החשוב בו נמצא רק בגוף ולא בכותרת. ההצעות צריכות להתייחס לגוף.
-- עריכה, Dismiss ו-Add: נוצר bubble צבעוני, ה-note לא השתנה, והנתונים נשמרים אחרי רענון.
-- Spark with AI על node רגיל עדיין עובד כמו קודם.
-- בדיקה בעברית ובערבית.
-
-## שלב C (אופציונלי, באישור נפרד)
-
-רק אחרי שהכול יציב: להחליט אם להשאיר את ה-COPY כסצנריו קבוע ל-Insights (מומלץ, כי זה הכי בטוח), או למזג את ה-route לסצנריו המקורי. מיזוג כזה ידרוש בדיקה חוזרת של expand.
+הסצנריו המקורי ב-Make, `MAKE_WEBHOOK_URL`, Spark with AI, מבנה ה-DB וה-RLS, Google sign-in, realtime, תוכן ה-notes וה-TODOs, Undo/Redo, Recently Deleted והתזוזה העצמאית של bubbles.
