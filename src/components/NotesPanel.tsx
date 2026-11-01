@@ -1,5 +1,10 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import { Check, FileText, ListTodo, Network, Plus, Trash2, X } from "lucide-react";
+import { Check, FileText, ListTodo, Loader2, Network, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { insightsEnabled, requestNoteInsights } from "@/lib/insights.functions";
+import type { Insight, InsightType } from "@/lib/normalizeInsights";
+
+const INSIGHT_COLOR: Record<InsightType, string> = { idea: "lime", question: "sky", connection: "lilac", perspective: "peach" };
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -37,12 +42,22 @@ export function NotesPanel(props: {
   setNodes: Dispatch<SetStateAction<Node[]>>;
 }) {
   const { boardId, canEdit, notes, setNotes, todos, setTodos, setNodes } = props;
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [active, setActive] = useState<string | null>(null);
   useEffect(() => {
     if (!active && notes[0]) setActive(notes[0].id);
   }, [notes, active]);
   const note = notes.find((n) => n.id === active);
+  const fetchInsights = useServerFn(requestNoteInsights);
+  const checkInsights = useServerFn(insightsEnabled);
+  const [insightsOn, setInsightsOn] = useState(false);
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [loadingInsights, setLoadingInsights] = useState(false);
+  useEffect(() => {
+    if (!canEdit) return;
+    checkInsights().then((r) => setInsightsOn(r.enabled)).catch(() => setInsightsOn(false));
+  }, [canEdit, checkInsights]);
+  useEffect(() => setInsights([]), [active]);
 
   const create = async (kind: "note" | "todo") => {
     const color = randomColor();
@@ -85,6 +100,34 @@ export function NotesPanel(props: {
   const removeTodo = async (id: string) => {
     setTodos((l) => l.filter((x) => x.id !== id));
     await supabase.from("todo_items").delete().eq("id", id);
+  };
+
+  const runInsights = async (n: Note) => {
+    setLoadingInsights(true);
+    setInsights([]);
+    try {
+      const r = await fetchInsights({ data: { boardId, noteId: n.id, language: lang } });
+      if (!r.ok) { toast.error(r.error === "empty" ? t("insightsEmpty") : t("insightsError")); return; }
+      if (!r.suggestions.length) { toast(t("noInsights")); return; }
+      setInsights(r.suggestions);
+    } catch {
+      toast.error(t("insightsError"));
+    } finally {
+      setLoadingInsights(false);
+    }
+  };
+  const addInsight = async (n: Note, i: number) => {
+    const s = insights[i];
+    if (!s || !s.text.trim()) return;
+    const { data, error } = await supabase
+      .from("nodes")
+      .insert({ board_id: boardId, text: s.text.trim(), color: INSIGHT_COLOR[s.type], note_id: n.id, is_ai: true, ai_type: s.type, status: "accepted", x: (Math.random() - 0.5) * 300, y: (Math.random() - 0.5) * 300 })
+      .select()
+      .single();
+    if (error) { toast.error(error.message); return; }
+    setNodes((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
+    setInsights((l) => l.filter((_, j) => j !== i));
+    toast.success(t("addedToMap"));
   };
 
   const items = note ? todos.filter((x) => x.note_id === note.id) : [];
@@ -141,10 +184,35 @@ export function NotesPanel(props: {
                     ))}
                   </div>
                   <Button size="sm" variant="outline" onClick={() => toMap(note)}><Network /> {t("toMap")}</Button>
+                  {insightsOn && (
+                    <Button size="sm" variant="secondary" disabled={loadingInsights} onClick={() => runInsights(note)}>
+                      {loadingInsights ? <Loader2 className="animate-spin" /> : <Sparkles />} {t("insights")}
+                    </Button>
+                  )}
                   <Button size="icon" variant="ghost" aria-label={t("delete")} onClick={() => removeNote(note.id)}><Trash2 className="text-destructive" /></Button>
                 </>
               )}
             </div>
+            {loadingInsights && <p className="text-sm text-muted-foreground">{t("analyzing")}</p>}
+            {insights.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {insights.map((s, i) => (
+                  <div key={i} className="flex flex-col gap-2 rounded-2xl p-3 shadow-bubble" style={{ background: bubbleBg(INSIGHT_COLOR[s.type]) }}>
+                    <span className="text-xs font-bold uppercase opacity-70">{s.type}</span>
+                    <textarea
+                      dir="auto"
+                      value={s.text}
+                      onChange={(e) => setInsights((l) => l.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
+                      className="min-h-16 w-full resize-y rounded-lg bg-card/60 p-2 text-sm outline-none"
+                    />
+                    <div className="flex gap-2">
+                      <Button size="sm" disabled={!s.text.trim()} onClick={() => addInsight(note, i)}><Plus /> {t("toMap")}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setInsights((l) => l.filter((_, j) => j !== i))}><X /> {t("dismiss")}</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {note.kind === "note" ? (
               <SyncedTextarea
                 value={note.content}
