@@ -206,7 +206,7 @@ export function NotesPanel(props: {
                       className="min-h-16 w-full resize-y rounded-lg bg-card/60 p-2 text-sm outline-none"
                     />
                     <div className="flex gap-2">
-                      <Button size="sm" disabled={!s.text.trim()} onClick={() => addInsight(note, i)}><Plus /> {t("toMap")}</Button>
+                      <Button size="sm" disabled={!s.text.trim()} onClick={() => addInsight(note, i)}><Plus /> {t("addInsightToMap")}</Button>
                       <Button size="sm" variant="ghost" onClick={() => setInsights((l) => l.filter((_, j) => j !== i))}><X /> {t("dismiss")}</Button>
                     </div>
                   </div>
