@@ -65,7 +65,7 @@ describe("visible-area and multi placement", () => {
     const existing = first.map((p) => ({ ...p, ...S }));
     const second = placeMany(existing, ring.map((r) => ({ ...r, ...S })));
     const all = [...existing, ...second.map((p) => ({ ...p, ...S }))];
-    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(ov(all[i], all[j])).toBe(false);
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(ov(all[i]!, all[j]!)).toBe(false);
   });
   it("prefers the visible area and skips the toolbar band", () => {
     const prefer = { minX: -400, maxX: 400, minY: -200, maxY: 300 }; // toolbar is above minY
