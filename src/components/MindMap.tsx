@@ -36,6 +36,12 @@ export function MindMap(props: {
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const viewRef = useRef(view);
   viewRef.current = view;
+  const [selected, setSelected] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
+  const drag = useRef<{ kind: "node" | "pan"; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
   // Publish the visible map area (below the floating toolbar, above the zoom controls) for new-bubble placement.
   useEffect(() => {
     const el = wrap.current;
@@ -50,12 +56,6 @@ export function MindMap(props: {
       maxY: (el.clientHeight - bottom - view.y) / view.k,
     };
   }, [view, selected]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [connectFrom, setConnectFrom] = useState<string | null>(null);
-  const [aiBusy, setAiBusy] = useState(false);
-  const [showTrash, setShowTrash] = useState(false);
-  const drag = useRef<{ kind: "node" | "pan"; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
 
   // center initially
   useEffect(() => {
