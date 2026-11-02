@@ -40,14 +40,16 @@ export function MindMap(props: {
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
-    const top = 76, bottom = 70, side = 12;
+    const bar = el.parentElement?.querySelector<HTMLElement>("[data-map-toolbar]");
+    const top = bar ? bar.offsetTop + bar.offsetHeight + 8 : 76;
+    const bottom = 70, side = 12;
     visibleArea.current = {
       minX: (side - view.x) / view.k,
       maxX: (el.clientWidth - side - view.x) / view.k,
       minY: (top - view.y) / view.k,
       maxY: (el.clientHeight - bottom - view.y) / view.k,
     };
-  }, [view]);
+  }, [view, selected]);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
@@ -406,7 +408,7 @@ export function MindMap(props: {
       </div>
 
       {/* toolbar */}
-      <div className="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-center justify-center gap-2 px-3">
+      <div data-map-toolbar className="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-center justify-center gap-2 px-3">
         {canEdit && (
           <Button className="pointer-events-auto" onClick={() => { const p = toWorld(wrap.current!.getBoundingClientRect().left + wrap.current!.clientWidth / 2, wrap.current!.getBoundingClientRect().top + wrap.current!.clientHeight / 2); addNode(p.x + (Math.random() - 0.5) * 80, p.y + (Math.random() - 0.5) * 80); }}>
             <Plus /> {t("addIdea")}
