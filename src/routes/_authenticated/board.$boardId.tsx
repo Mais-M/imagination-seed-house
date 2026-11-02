@@ -59,6 +59,7 @@ function BoardPage() {
             defaultValue={b.board.title}
             readOnly={!b.canEdit}
             aria-label={t("boardName")}
+            dir="auto"
             onBlur={(e) => rename(e.target.value)}
             className="min-w-0 max-w-xs rounded-full bg-transparent px-3 py-1 font-display text-xl font-semibold outline-none focus:bg-muted"
           />
