@@ -189,11 +189,11 @@ export function NotesPanel(props: {
                 readOnly={!canEdit}
                 placeholder={t("title")}
                 onSave={(v) => patchNote(note.id, { title: v })}
-                className="min-w-0 flex-1 bg-transparent font-display text-3xl font-bold outline-none"
+                className="min-w-[min(100%,16rem)] flex-1 basis-64 bg-transparent font-display text-3xl font-bold outline-none"
               />
               {canEdit && (
                 <>
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
                     {PALETTE.map((c) => (
                       <button key={c} aria-label={c} onClick={() => patchNote(note.id, { color: c })} className={cn("size-5 rounded-full", note.color === c && "ring-2 ring-foreground")} style={{ background: bubbleBg(c) }} />
                     ))}
