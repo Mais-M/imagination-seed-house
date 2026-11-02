@@ -12,11 +12,27 @@ import { bubbleBg, PALETTE, randomColor } from "@/components/brand";
 import { useI18n } from "@/lib/i18n";
 import type { Note, Todo, Node } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
-import { SyncedInput, SyncedTextarea } from "@/components/SyncedField";
+import { SyncedInput, SyncedTextarea, SyncedTitle, useAutoGrow } from "@/components/SyncedField";
 import { estimateBubbleSize, findFreeSpot, bubbleSizes } from "@/lib/placement";
 import type { TKey } from "@/lib/i18n";
 
 const INSIGHT_LABEL: Record<InsightType, TKey> = { idea: "aiIdea", question: "aiQuestion", connection: "aiConnection", perspective: "aiPerspective" };
+
+// Insight edit box: grows to fit its text up to ~8 lines, then scrolls.
+function InsightBox({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+  const ref = useAutoGrow(value, 8 * 20 + 16);
+  return (
+    <textarea
+      ref={ref}
+      dir="auto"
+      rows={2}
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full resize-none rounded-lg bg-card/60 p-2 text-sm leading-5 outline-none"
+    />
+  );
+}
 
 export function TodoCheck({ done, onToggle, disabled }: { done: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
@@ -184,12 +200,14 @@ export function NotesPanel(props: {
         {note ? (
           <div key={note.id} className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
-              <SyncedInput
+              <SyncedTitle
                 value={note.title}
                 readOnly={!canEdit}
                 placeholder={t("title")}
+                aria-label={t("title")}
+                dir="auto"
                 onSave={(v) => patchNote(note.id, { title: v })}
-                className="min-w-[min(100%,16rem)] flex-1 basis-64 bg-transparent font-display text-3xl font-bold outline-none"
+                className="block min-w-[min(100%,16rem)] flex-1 basis-64 break-words bg-transparent font-display text-3xl font-bold leading-tight outline-none"
               />
               {canEdit && (
                 <>
@@ -217,12 +235,10 @@ export function NotesPanel(props: {
                 {insights.map((s, i) => (
                   <div key={i} className="flex min-w-0 flex-col gap-2 rounded-2xl p-3 shadow-bubble" style={{ background: bubbleBg(INSIGHT_COLOR[s.type]) }}>
                     <span className="text-xs font-bold opacity-70">{t(INSIGHT_LABEL[s.type])}</span>
-                    <textarea
-                      dir="auto"
-                      aria-label={t("editInsight")}
+                    <InsightBox
+                      label={t("editInsight")}
                       value={s.text}
-                      onChange={(e) => setInsights((l) => l.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
-                      className="min-h-16 w-full resize-y rounded-lg bg-card/60 p-2 text-sm outline-none"
+                      onChange={(v) => setInsights((l) => l.map((x, j) => (j === i ? { ...x, text: v } : x)))}
                     />
                     <div className="flex flex-wrap gap-2">
                       <Button size="sm" className="h-auto min-h-8 whitespace-normal py-1 text-start" disabled={!s.text.trim()} onClick={() => addInsight(note, i)}><Plus /> {t("addInsightToMap")}</Button>

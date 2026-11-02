@@ -67,7 +67,7 @@ function BoardsPage() {
             style={{ background: bubbleBg(b.color) }}
           >
             {!own && <Users className="absolute top-4 start-4 size-5 opacity-60" />}
-            <span className="font-display text-xl font-semibold">{b.title}</span>
+            <span dir="auto" className="font-display text-xl font-semibold">{b.title}</span>
             <span className="text-xs opacity-60">{new Date(b.updated_at).toLocaleDateString()}</span>
           </Link>
           {own && (
