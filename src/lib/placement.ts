@@ -28,18 +28,51 @@ export function estimateBubbleSize(text: string, isAi: boolean): Size {
 const overlaps = (a: Box, b: Box, gap: number) =>
   Math.abs(a.x - b.x) * 2 < a.w + b.w + gap * 2 && Math.abs(a.y - b.y) * 2 < a.h + b.h + gap * 2;
 
-/** First non-overlapping centre on a spiral around (cx, cy). Never moves existing bubbles. */
-export function findFreeSpot(existing: readonly Box[], size: Size, opts: { cx?: number; cy?: number; gap?: number; maxR?: number } = {}) {
-  const { cx = 0, cy = 0, gap = 24, maxR = 2000 } = opts;
+export type Rect = { minX: number; minY: number; maxX: number; maxY: number };
+
+/** Visible part of the mind map below the floating toolbar, in map coordinates (display only, never saved). */
+export const visibleArea: { current: Rect | null } = { current: null };
+
+const inside = (p: { x: number; y: number }, s: Size, r: Rect) =>
+  p.x - s.w / 2 >= r.minX && p.x + s.w / 2 <= r.maxX && p.y - s.h / 2 >= r.minY && p.y + s.h / 2 <= r.maxY;
+
+/**
+ * First non-overlapping centre on a spiral around (cx, cy). Never moves existing bubbles.
+ * With `prefer`, spots fully inside that rectangle are tried first; otherwise falls back to any free spot.
+ */
+export function findFreeSpot(
+  existing: readonly Box[],
+  size: Size,
+  opts: { cx?: number; cy?: number; gap?: number; maxR?: number; prefer?: Rect | null } = {},
+) {
+  const { cx = 0, cy = 0, gap = 24, maxR = 2000, prefer } = opts;
+  const passes = prefer ? [prefer, null] : [null];
   let last = { x: cx, y: cy };
-  for (let r = 0; r <= maxR; r += 40) {
-    const steps = r === 0 ? 1 : Math.max(8, Math.round((2 * Math.PI * r) / 60));
-    for (let i = 0; i < steps; i++) {
-      const a = (i / steps) * Math.PI * 2;
-      const p = { x: Math.round(cx + Math.cos(a) * r), y: Math.round(cy + Math.sin(a) * r * 0.7) };
-      last = p;
-      if (!existing.some((e) => overlaps({ ...p, ...size }, e, gap))) return p;
+  for (const area of passes) {
+    for (let r = 0; r <= maxR; r += 40) {
+      const steps = r === 0 ? 1 : Math.max(8, Math.round((2 * Math.PI * r) / 60));
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        const p = { x: Math.round(cx + Math.cos(a) * r), y: Math.round(cy + Math.sin(a) * r * 0.7) };
+        if (area && !inside(p, size, area)) continue;
+        if (!area) last = p;
+        if (!existing.some((e) => overlaps({ ...p, ...size }, e, gap))) return p;
+      }
     }
   }
   return last;
+}
+
+/** Place several new bubbles one after another; each placed bubble counts as taken for the next. */
+export function placeMany(
+  existing: readonly Box[],
+  items: readonly ({ cx: number; cy: number } & Size)[],
+  opts: { gap?: number; prefer?: Rect | null } = {},
+) {
+  const taken: Box[] = [...existing];
+  return items.map((it) => {
+    const p = findFreeSpot(taken, it, { ...opts, cx: it.cx, cy: it.cy });
+    taken.push({ ...p, w: it.w, h: it.h });
+    return p;
+  });
 }

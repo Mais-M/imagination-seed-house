@@ -9,7 +9,7 @@ import { useI18n, type TKey } from "@/lib/i18n";
 import { requestBrainstorm } from "@/lib/brainstorm.functions";
 import type { Conn, Node, Note } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
-import { bubbleSizes } from "@/lib/placement";
+import { bubbleSizes, visibleArea } from "@/lib/placement";
 
 type View = { x: number; y: number; k: number };
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -42,6 +42,20 @@ export function MindMap(props: {
   const [aiBusy, setAiBusy] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const drag = useRef<{ kind: "node" | "pan"; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  // Publish the visible map area (below the floating toolbar, above the zoom controls) for new-bubble placement.
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const bar = el.parentElement?.querySelector<HTMLElement>("[data-map-toolbar]");
+    const top = bar ? bar.offsetTop + bar.offsetHeight + 8 : 76;
+    const bottom = 70, side = 12;
+    visibleArea.current = {
+      minX: (side - view.x) / view.k,
+      maxX: (el.clientWidth - side - view.x) / view.k,
+      minY: (top - view.y) / view.k,
+      maxY: (el.clientHeight - bottom - view.y) / view.k,
+    };
+  }, [view, selected]);
 
   // center initially
   useEffect(() => {
@@ -231,7 +245,7 @@ export function MindMap(props: {
   const runAI = async (id: string) => {
     setAiBusy(true);
     try {
-      const r = await brainstorm({ data: { boardId, focusNodeId: id, language: lang, requestType: "expand" } });
+      const r = await brainstorm({ data: { boardId, focusNodeId: id, language: lang, requestType: "expand", view: visibleArea.current ?? undefined } });
       if (!r.ok) toast.error(r.error === "not_configured" ? t("aiNotConfigured") : t("aiError"));
       else if (r.added === 0) toast.message(t("aiEmpty"));
       else toast.success(`✨ ${r.added} ${t("aiAdded")}`);
@@ -394,7 +408,7 @@ export function MindMap(props: {
       </div>
 
       {/* toolbar */}
-      <div className="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-center justify-center gap-2 px-3">
+      <div data-map-toolbar className="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-center justify-center gap-2 px-3">
         {canEdit && (
           <Button className="pointer-events-auto" onClick={() => { const p = toWorld(wrap.current!.getBoundingClientRect().left + wrap.current!.clientWidth / 2, wrap.current!.getBoundingClientRect().top + wrap.current!.clientHeight / 2); addNode(p.x + (Math.random() - 0.5) * 80, p.y + (Math.random() - 0.5) * 80); }}>
             <Plus /> {t("addIdea")}

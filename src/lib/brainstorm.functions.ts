@@ -2,12 +2,15 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { humanizeIds } from "@/lib/humanizeIds";
+import { estimateBubbleSize, placeMany } from "@/lib/placement";
 
 const Input = z.object({
   boardId: z.string().uuid(),
   focusNodeId: z.string().uuid(),
   language: z.enum(["en", "he", "ar"]),
   requestType: z.string().max(40).default("expand"),
+  // Visible map area (placement only; never sent to Make).
+  view: z.object({ minX: z.number().finite(), minY: z.number().finite(), maxX: z.number().finite(), maxY: z.number().finite() }).optional(),
 });
 
 const TYPE_COLOR: Record<string, string> = { idea: "lime", question: "sky", connection: "lilac", perspective: "peach" };
@@ -74,15 +77,25 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
     if (!rows.length) return { ok: true as const, added: 0 };
 
     const R = 320;
+    const existing = (nodes ?? []).map((n) => ({ x: n.x, y: n.y, ...estimateBubbleSize(n.text, n.is_ai) }));
+    const types = rows.map((s) => (TYPE_COLOR[s.type] ? s.type : "idea"));
+    const spots = placeMany(
+      existing,
+      rows.map((s, i) => {
+        const a = (i / rows.length) * Math.PI * 2 - Math.PI / 2;
+        return { cx: focus.x + Math.cos(a) * R, cy: focus.y + Math.sin(a) * R, ...estimateBubbleSize(s.text, true) };
+      }),
+      { prefer: data.view ?? null },
+    );
     const inserts = rows.map((s, i) => {
-      const a = (i / rows.length) * Math.PI * 2 - Math.PI / 2;
-      const type = TYPE_COLOR[s.type] ? s.type : "idea";
+      const type = types[i] ?? "idea";
+      const spot = spots[i] ?? { x: focus.x, y: focus.y };
       return {
         board_id: data.boardId,
         text: s.text,
         color: s.color || TYPE_COLOR[type] || "sky",
-        x: focus.x + Math.cos(a) * R,
-        y: focus.y + Math.sin(a) * R,
+        x: spot.x,
+        y: spot.y,
         is_ai: true,
         ai_type: type,
         status: "suggested",
