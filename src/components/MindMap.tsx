@@ -62,6 +62,7 @@ export function MindMap(props: {
 
   // Gently pan (never zoom) once to reveal newly added bubbles that are off-screen. Bubbles never move.
   const [ready, setReady] = useState(false);
+  const [revealTick, setRevealTick] = useState(0); // re-checks a reveal that was deferred by a drag
   const anim = useRef<number | null>(null);
   const cancelReveal = () => { if (anim.current != null) cancelAnimationFrame(anim.current); anim.current = null; };
   useEffect(() => {
@@ -83,7 +84,7 @@ export function MindMap(props: {
       anim.current = p < 1 ? requestAnimationFrame(step) : null;
     };
     anim.current = requestAnimationFrame(step);
-  }, [nodes, ready, editing]);
+  }, [nodes, ready, editing, revealTick]);
   useEffect(() => cancelReveal, []);
 
   // center initially
@@ -319,6 +320,7 @@ export function MindMap(props: {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
+    if (pendingReveal.ids.length) setRevealTick((n) => n + 1);
     if (d.kind === "pan") {
       if (!d.moved) {
         setSelected(null);
