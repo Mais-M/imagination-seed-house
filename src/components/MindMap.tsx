@@ -9,7 +9,7 @@ import { useI18n, type TKey } from "@/lib/i18n";
 import { requestBrainstorm } from "@/lib/brainstorm.functions";
 import type { Conn, Node, Note } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
-import { bubbleSizes } from "@/lib/placement";
+import { bubbleSizes, visibleArea } from "@/lib/placement";
 
 type View = { x: number; y: number; k: number };
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -36,6 +36,18 @@ export function MindMap(props: {
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const viewRef = useRef(view);
   viewRef.current = view;
+  // Publish the visible map area (below the floating toolbar, above the zoom controls) for new-bubble placement.
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const top = 76, bottom = 70, side = 12;
+    visibleArea.current = {
+      minX: (side - view.x) / view.k,
+      maxX: (el.clientWidth - side - view.x) / view.k,
+      minY: (top - view.y) / view.k,
+      maxY: (el.clientHeight - bottom - view.y) / view.k,
+    };
+  }, [view]);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
@@ -231,7 +243,7 @@ export function MindMap(props: {
   const runAI = async (id: string) => {
     setAiBusy(true);
     try {
-      const r = await brainstorm({ data: { boardId, focusNodeId: id, language: lang, requestType: "expand" } });
+      const r = await brainstorm({ data: { boardId, focusNodeId: id, language: lang, requestType: "expand", view: visibleArea.current ?? undefined } });
       if (!r.ok) toast.error(r.error === "not_configured" ? t("aiNotConfigured") : t("aiError"));
       else if (r.added === 0) toast.message(t("aiEmpty"));
       else toast.success(`✨ ${r.added} ${t("aiAdded")}`);

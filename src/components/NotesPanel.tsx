@@ -13,7 +13,7 @@ import { useI18n } from "@/lib/i18n";
 import type { Note, Todo, Node } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
 import { SyncedInput, SyncedTextarea, SyncedTitle, useAutoGrow } from "@/components/SyncedField";
-import { estimateBubbleSize, findFreeSpot, bubbleSizes } from "@/lib/placement";
+import { estimateBubbleSize, findFreeSpot, bubbleSizes, visibleArea } from "@/lib/placement";
 import type { TKey } from "@/lib/i18n";
 
 const INSIGHT_LABEL: Record<InsightType, TKey> = { idea: "aiIdea", question: "aiQuestion", connection: "aiConnection", perspective: "aiPerspective" };
@@ -68,7 +68,9 @@ export function NotesPanel(props: {
       const m = bubbleSizes.get(x.id) ?? estimateBubbleSize(x.text, x.is_ai);
       return { x: x.x, y: x.y, w: m.w, h: m.h };
     });
-    return findFreeSpot(existing, estimateBubbleSize(text, isAi));
+    const v = visibleArea.current;
+    const opts = v ? { cx: (v.minX + v.maxX) / 2, cy: (v.minY + v.maxY) / 2, prefer: v } : {};
+    return findFreeSpot(existing, estimateBubbleSize(text, isAi), opts);
   };
   const { t, lang } = useI18n();
   const [active, setActive] = useState<string | null>(null);
