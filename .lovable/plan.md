@@ -33,6 +33,11 @@ Fix: let the button row wrap, allow the add button's text to wrap, and keep the 
 ### P2 — New bubbles land on top of existing ones
 Why: insight and note bubbles are placed at a random spot within ±150px of the center. Since bubbles are now up to 280px wide, they often overlap.
 Fix: only for **newly added** bubbles, choose the first free spot in a spiral around the center that doesn't overlap existing bubbles. Existing bubbles are never moved; dragging is unchanged.
+Bubble sizes used for the overlap check:
+- **Existing bubbles:** their real on-screen size, measured from the mind map when it is open (each bubble's rendered width and height).
+- **When the map isn't open** (adding from Notes) or a bubble hasn't been measured yet: a reliable estimate from its text — width from text length, clamped to 110–280px; height from the estimated number of wrapped lines times line height, plus padding and the AI label row for AI bubbles. The estimate rounds up and allows wider characters, so Hebrew and Arabic text is never underestimated.
+- **The new bubble:** estimated the same way from its own text, so a long insight reserves enough room.
+- A small gap (about 24px) is kept between bubbles. If no free spot is found within a set search radius, the farthest tried spot is used; nothing else moves.
 
 ## Suspected / minor issues (to verify during testing)
 - Hebrew/Arabic insight text inside cards: the edit box already uses automatic direction; verify the card layout and button order flip correctly. Fix only if wrong.
@@ -45,7 +50,8 @@ Spark with AI, Make, the Insights request/response, realtime, notes/TODO logic, 
 
 ## Verification
 - New unit tests:
-  - free-spot placement: returns a position that doesn't overlap given bubbles; returns the center when empty.
+  - free-spot placement: returns the center when empty; avoids overlap with given bubbles; a long multi-line new bubble does not overlap a tall existing bubble; uses measured sizes when given instead of estimates; never changes the positions of existing bubbles.
+  - size estimate: longer text gives a taller (never shorter) bubble; width stays within 110–280px; Hebrew/Arabic text gets an estimate at least as large as English of the same length.
   - every insight type has a translated label in en/he/ar, and he/ar labels differ from English.
 - Run existing tests (normalizeInsights, humanizeIds).
 - Preview check on the test board in en/he/ar: insight cards show translated categories, no clipped buttons at 890px width, adding an insight creates an insight bubble (checked in the saved data) that doesn't overlap, note button shows "Already on map", Spark with AI still works.
@@ -53,6 +59,7 @@ Spark with AI, Make, the Insights request/response, realtime, notes/TODO logic, 
 ## Technical details
 - `src/lib/i18n.tsx`: change `toMap` text, update ar `addInsightToMap`, add `noteAddedToMap`, `insightAddedToMap`, `alreadyOnMap`, `editInsight`.
 - `src/components/NotesPanel.tsx`: translated type label, wrapping button row, toasts, already-on-map state (needs `nodes` prop), placement via helper.
-- `src/lib/placement.ts` (new) + `placement.test.ts`: `findFreeSpot(nodes, w=280, h=120)`.
+- `src/lib/placement.ts` (new) + `placement.test.ts`: `estimateBubbleSize(text, isAi)` and `findFreeSpot(existing: {x,y,w,h}[], newSize)`.
+- `src/components/MindMap.tsx`: record each bubble's rendered size (display only, not saved) into a shared lookup used by placement; no change to dragging, positions or links.
 - `src/lib/i18n.test.ts` (new): label coverage test.
 - `src/routes/_authenticated/board.$boardId.tsx`: pass `nodes` to NotesPanel.
