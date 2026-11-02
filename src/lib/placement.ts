@@ -76,3 +76,23 @@ export function placeMany(
     return p;
   });
 }
+
+/** New bubble ids the mind map should bring into view once (display only, never saved). */
+export const pendingReveal: { ids: string[] } = { ids: [] };
+
+/**
+ * Smallest map-space shift that brings all boxes inside `area` (0,0 when already visible).
+ * If the group is larger than the area on an axis, it is centred on that axis instead.
+ */
+export function revealShift(boxes: readonly Box[], area: Rect) {
+  if (!boxes.length) return { dx: 0, dy: 0 };
+  const minX = Math.min(...boxes.map((b) => b.x - b.w / 2)), maxX = Math.max(...boxes.map((b) => b.x + b.w / 2));
+  const minY = Math.min(...boxes.map((b) => b.y - b.h / 2)), maxY = Math.max(...boxes.map((b) => b.y + b.h / 2));
+  const axis = (lo: number, hi: number, aLo: number, aHi: number) => {
+    if (hi - lo > aHi - aLo) return (aLo + aHi) / 2 - (lo + hi) / 2;
+    if (lo < aLo) return aLo - lo;
+    if (hi > aHi) return aHi - hi;
+    return 0;
+  };
+  return { dx: axis(minX, maxX, area.minX, area.maxX), dy: axis(minY, maxY, area.minY, area.maxY) };
+}
