@@ -47,3 +47,41 @@ describe("estimateBubbleSize", () => {
     }
   });
 });
+
+import { placeMany } from "./placement";
+describe("visible-area and multi placement", () => {
+  const ov = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
+    Math.abs(a.x - b.x) * 2 < a.w + b.w && Math.abs(a.y - b.y) * 2 < a.h + b.h;
+  const S = { w: 200, h: 80 };
+  it("Spark ring spots already taken get non-overlapping replacements", () => {
+    const ring = [{ cx: 0, cy: -320 }, { cx: 320, cy: 0 }, { cx: 0, cy: 320 }, { cx: -320, cy: 0 }];
+    const existing = ring.map((r) => ({ x: r.cx, y: r.cy, ...S }));
+    const spots = placeMany(existing, ring.map((r) => ({ ...r, ...S })));
+    spots.forEach((p) => existing.forEach((e) => expect(ov({ ...p, ...S }, e)).toBe(false)));
+  });
+  it("running twice never stacks bubbles", () => {
+    const ring = [{ cx: 0, cy: -320 }, { cx: 320, cy: 0 }];
+    const first = placeMany([], ring.map((r) => ({ ...r, ...S })));
+    const existing = first.map((p) => ({ ...p, ...S }));
+    const second = placeMany(existing, ring.map((r) => ({ ...r, ...S })));
+    const all = [...existing, ...second.map((p) => ({ ...p, ...S }))];
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(ov(all[i], all[j])).toBe(false);
+  });
+  it("prefers the visible area and skips the toolbar band", () => {
+    const prefer = { minX: -400, maxX: 400, minY: -200, maxY: 300 }; // toolbar is above minY
+    const p = findFreeSpot([], S, { cx: 0, cy: -400, prefer });
+    expect(p.y - S.h / 2).toBeGreaterThanOrEqual(-200);
+    expect(p.y + S.h / 2).toBeLessThanOrEqual(300);
+  });
+  it("falls back outside when the visible area is full", () => {
+    const prefer = { minX: -100, maxX: 100, minY: -40, maxY: 40 };
+    const p = findFreeSpot([{ x: 0, y: 0, w: 200, h: 80 }], S, { prefer });
+    expect(ov({ ...p, ...S }, { x: 0, y: 0, w: 200, h: 80 })).toBe(false);
+  });
+  it("never changes existing positions", () => {
+    const existing = [{ x: 5, y: 6, ...S }];
+    const copy = JSON.stringify(existing);
+    placeMany(existing, [{ cx: 5, cy: 6, ...S }], { prefer: { minX: -500, maxX: 500, minY: -500, maxY: 500 } });
+    expect(JSON.stringify(existing)).toBe(copy);
+  });
+});
