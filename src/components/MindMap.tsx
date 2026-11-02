@@ -9,7 +9,7 @@ import { useI18n, type TKey } from "@/lib/i18n";
 import { requestBrainstorm } from "@/lib/brainstorm.functions";
 import type { Conn, Node, Note } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
-import { bubbleSizes, visibleArea } from "@/lib/placement";
+import { bubbleSizes, estimateBubbleSize, pendingReveal, revealShift, visibleArea, type Rect } from "@/lib/placement";
 
 type View = { x: number; y: number; k: number };
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -42,25 +42,55 @@ export function MindMap(props: {
   const [aiBusy, setAiBusy] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const drag = useRef<{ kind: "node" | "pan"; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
-  // Publish the visible map area (below the floating toolbar, above the zoom controls) for new-bubble placement.
-  useEffect(() => {
+  // Visible map area (below the floating toolbar, above the zoom controls), in map coordinates.
+  const areaFor = (v: View): Rect | null => {
     const el = wrap.current;
-    if (!el) return;
+    if (!el) return null;
     const bar = el.parentElement?.querySelector<HTMLElement>("[data-map-toolbar]");
     const top = bar ? bar.offsetTop + bar.offsetHeight + 8 : 76;
     const bottom = 70, side = 12;
-    visibleArea.current = {
-      minX: (side - view.x) / view.k,
-      maxX: (el.clientWidth - side - view.x) / view.k,
-      minY: (top - view.y) / view.k,
-      maxY: (el.clientHeight - bottom - view.y) / view.k,
+    return {
+      minX: (side - v.x) / v.k,
+      maxX: (el.clientWidth - side - v.x) / v.k,
+      minY: (top - v.y) / v.k,
+      maxY: (el.clientHeight - bottom - v.y) / v.k,
     };
+  };
+  useEffect(() => {
+    visibleArea.current = areaFor(view);
   }, [view, selected]);
+
+  // Gently pan (never zoom) once to reveal newly added bubbles that are off-screen. Bubbles never move.
+  const [ready, setReady] = useState(false);
+  const anim = useRef<number | null>(null);
+  const cancelReveal = () => { if (anim.current != null) cancelAnimationFrame(anim.current); anim.current = null; };
+  useEffect(() => {
+    if (!ready || !pendingReveal.ids.length || drag.current || editing) return;
+    const found = pendingReveal.ids.map((id) => nodes.find((n) => n.id === id && !n.deleted_at)).filter((n): n is Node => !!n);
+    if (found.length < pendingReveal.ids.length) return; // wait until all have arrived
+    pendingReveal.ids = [];
+    const v = viewRef.current;
+    const area = areaFor(v);
+    if (!area) return;
+    const boxes = found.map((n) => ({ x: n.x, y: n.y, ...(bubbleSizes.get(n.id) ?? estimateBubbleSize(n.text, n.is_ai)) }));
+    const { dx, dy } = revealShift(boxes, area);
+    if (!dx && !dy) return;
+    cancelReveal();
+    const from = { x: v.x, y: v.y }, to = { x: v.x + dx * v.k, y: v.y + dy * v.k }, t0 = performance.now();
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / 450), e = 1 - Math.pow(1 - p, 3);
+      setView((cur) => ({ ...cur, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e }));
+      anim.current = p < 1 ? requestAnimationFrame(step) : null;
+    };
+    anim.current = requestAnimationFrame(step);
+  }, [nodes, ready, editing]);
+  useEffect(() => cancelReveal, []);
 
   // center initially
   useEffect(() => {
     const el = wrap.current;
     if (el) setView({ x: el.clientWidth / 2, y: el.clientHeight / 2, k: 1 });
+    setReady(true);
   }, []);
 
   // wheel zoom (non-passive)
@@ -248,7 +278,11 @@ export function MindMap(props: {
       const r = await brainstorm({ data: { boardId, focusNodeId: id, language: lang, requestType: "expand", view: visibleArea.current ?? undefined } });
       if (!r.ok) toast.error(r.error === "not_configured" ? t("aiNotConfigured") : t("aiError"));
       else if (r.added === 0) toast.message(t("aiEmpty"));
-      else toast.success(`✨ ${r.added} ${t("aiAdded")}`);
+      else {
+        pendingReveal.ids = r.ids;
+        setNodes((l) => [...l]); // re-check once realtime delivers them
+        toast.success(`✨ ${r.added} ${t("aiAdded")}`);
+      }
     } catch {
       toast.error(t("aiError"));
     } finally {
@@ -260,6 +294,7 @@ export function MindMap(props: {
   const onBgDown = (e: RPE) => {
     if (e.button !== 0) return;
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    cancelReveal();
     drag.current = { kind: "pan", sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false };
   };
   const onNodeDown = (e: RPE, n: Node) => {
@@ -273,6 +308,7 @@ export function MindMap(props: {
     if (!d) return;
     const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
     if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
+    if (d.moved) cancelReveal();
     if (d.kind === "pan") setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy }));
     else if (canEdit && d.moved) {
       const k = viewRef.current.k;

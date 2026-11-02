@@ -76,3 +76,38 @@ export function placeMany(
     return p;
   });
 }
+
+/** New bubble ids the mind map should bring into view once (display only, never saved). */
+export const pendingReveal: { ids: string[] } = { ids: [] };
+
+const bounds = (bs: readonly Box[]) => ({
+  minX: Math.min(...bs.map((b) => b.x - b.w / 2)), maxX: Math.max(...bs.map((b) => b.x + b.w / 2)),
+  minY: Math.min(...bs.map((b) => b.y - b.h / 2)), maxY: Math.max(...bs.map((b) => b.y + b.h / 2)),
+});
+
+/**
+ * Smallest map-space shift that brings the new boxes inside `area` (0,0 when already visible).
+ * If the whole group cannot fit, the largest group that fits — starting from the box nearest
+ * the current view — is revealed instead. Boxes themselves are never changed.
+ */
+export function revealShift(boxes: readonly Box[], area: Rect) {
+  if (!boxes.length) return { dx: 0, dy: 0 };
+  const W = area.maxX - area.minX, H = area.maxY - area.minY;
+  const fits = (bs: readonly Box[]) => { const u = bounds(bs); return u.maxX - u.minX <= W && u.maxY - u.minY <= H; };
+  let group: Box[] = [...boxes];
+  if (!fits(group)) {
+    const ax = (area.minX + area.maxX) / 2, ay = (area.minY + area.maxY) / 2;
+    const sorted = [...boxes].sort((a, b) => Math.hypot(a.x - ax, a.y - ay) - Math.hypot(b.x - ax, b.y - ay));
+    group = [];
+    for (const b of sorted) if (fits([...group, b])) group.push(b);
+    if (!group.length) group = [sorted[0]!];
+  }
+  const u = bounds(group);
+  const axis = (lo: number, hi: number, aLo: number, aHi: number) => {
+    if (hi - lo > aHi - aLo) return aLo - lo; // a single box larger than the view: show its start
+    if (lo < aLo) return aLo - lo;
+    if (hi > aHi) return aHi - hi;
+    return 0;
+  };
+  return { dx: axis(u.minX, u.maxX, area.minX, area.maxX), dy: axis(u.minY, u.maxY, area.minY, area.maxY) };
+}

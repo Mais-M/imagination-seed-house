@@ -21,17 +21,17 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const url = process.env["MAKE_WEBHOOK_URL"];
-    if (!url) return { ok: false as const, error: "not_configured" as const, added: 0 };
+    if (!url) return { ok: false as const, error: "not_configured" as const, added: 0, ids: [] as string[] };
 
     const { data: canEdit } = await supabase.rpc("can_edit_board", { _board: data.boardId });
-    if (!canEdit) return { ok: false as const, error: "forbidden" as const, added: 0 };
+    if (!canEdit) return { ok: false as const, error: "forbidden" as const, added: 0, ids: [] as string[] };
 
     const [{ data: nodes }, { data: conns }] = await Promise.all([
       supabase.from("nodes").select("id,text,color,x,y,is_ai,status").eq("board_id", data.boardId).is("deleted_at", null).limit(300),
       supabase.from("connections").select("id,from_node,to_node").eq("board_id", data.boardId).is("deleted_at", null).limit(600),
     ]);
     const focus = nodes?.find((n) => n.id === data.focusNodeId);
-    if (!focus) return { ok: false as const, error: "no_focus" as const, added: 0 };
+    if (!focus) return { ok: false as const, error: "no_focus" as const, added: 0, ids: [] as string[] };
     const labels = new Map((nodes ?? []).map((n) => [n.id.toLowerCase(), n.text]));
 
     const request_id = crypto.randomUUID();
@@ -54,13 +54,13 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
       });
       if (!res.ok) {
         console.error("Make webhook status", res.status);
-        return { ok: false as const, error: "upstream" as const, added: 0 };
+        return { ok: false as const, error: "upstream" as const, added: 0, ids: [] as string[] };
       }
       const text = await res.text();
       body = text ? JSON.parse(text) : {};
     } catch (e) {
       console.error("Make webhook failed", e);
-      return { ok: false as const, error: "upstream" as const, added: 0 };
+      return { ok: false as const, error: "upstream" as const, added: 0, ids: [] as string[] };
     }
 
     const raw = (body as { suggestions?: unknown })?.suggestions;
@@ -74,7 +74,7 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
         related: typeof s?.["related_node_id"] === "string" ? s["related_node_id"] : typeof s?.["related_node"] === "string" ? s["related_node"] : null,
       }))
       .filter((s) => s.text);
-    if (!rows.length) return { ok: true as const, added: 0 };
+    if (!rows.length) return { ok: true as const, added: 0, ids: [] as string[] };
 
     const R = 320;
     const existing = (nodes ?? []).map((n) => ({ x: n.x, y: n.y, ...estimateBubbleSize(n.text, n.is_ai) }));
@@ -105,7 +105,7 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
     const { data: created, error } = await supabase.from("nodes").insert(inserts).select("id");
     if (error || !created) {
       console.error(error);
-      return { ok: false as const, error: "save" as const, added: 0 };
+      return { ok: false as const, error: "save" as const, added: 0, ids: [] as string[] };
     }
     const links = created.flatMap((n, i) => {
       const out = [{ board_id: data.boardId, from_node: focus.id, to_node: n.id, is_ai: true }];
@@ -114,5 +114,5 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
       return out;
     });
     await supabase.from("connections").insert(links);
-    return { ok: true as const, added: created.length };
+    return { ok: true as const, added: created.length, ids: created.map((n) => n.id) };
   });

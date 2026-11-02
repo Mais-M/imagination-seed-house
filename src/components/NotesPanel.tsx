@@ -13,7 +13,7 @@ import { useI18n } from "@/lib/i18n";
 import type { Note, Todo, Node } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
 import { SyncedInput, SyncedTextarea, SyncedTitle, useAutoGrow } from "@/components/SyncedField";
-import { estimateBubbleSize, findFreeSpot, bubbleSizes, visibleArea } from "@/lib/placement";
+import { estimateBubbleSize, findFreeSpot, bubbleSizes, pendingReveal, visibleArea } from "@/lib/placement";
 import type { TKey } from "@/lib/i18n";
 
 const INSIGHT_LABEL: Record<InsightType, TKey> = { idea: "aiIdea", question: "aiQuestion", connection: "aiConnection", perspective: "aiPerspective" };
@@ -116,6 +116,7 @@ export function NotesPanel(props: {
       .single();
     if (error) { toast.error(error.message); return; }
     setNodes((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
+    pendingReveal.ids = [data.id];
     toast.success(t("noteAddedToMap"));
   };
   const addTodo = async (text: string) => {
@@ -160,6 +161,7 @@ export function NotesPanel(props: {
     if (error) { toast.error(error.message); return; }
     setNodes((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
     setInsights((l) => l.filter((_, j) => j !== i));
+    pendingReveal.ids = [...pendingReveal.ids, data.id];
     toast.success(t("insightAddedToMap"));
   };
 

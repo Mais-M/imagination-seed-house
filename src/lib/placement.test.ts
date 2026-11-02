@@ -85,3 +85,35 @@ describe("visible-area and multi placement", () => {
     expect(JSON.stringify(existing)).toBe(copy);
   });
 });
+
+import { revealShift } from "./placement";
+describe("revealShift (view only)", () => {
+  const area = { minX: -400, maxX: 400, minY: -200, maxY: 300 };
+  it("does not move the view when new bubbles are already visible", () => {
+    expect(revealShift([{ x: 0, y: 0, w: 200, h: 80 }], area)).toEqual({ dx: 0, dy: 0 });
+  });
+  it("one shift reveals a whole group of Spark suggestions", () => {
+    const group = [{ x: 600, y: 0, w: 200, h: 80 }, { x: 700, y: 100, w: 200, h: 80 }];
+    const s = revealShift(group, area);
+    group.forEach((b) => {
+      expect(b.x + s.dx - b.w / 2).toBeGreaterThanOrEqual(area.minX);
+      expect(b.x + s.dx + b.w / 2).toBeLessThanOrEqual(area.maxX);
+    });
+    expect(s.dy).toBe(0);
+  });
+  it("reveals a bubble hidden under the toolbar", () => {
+    const s = revealShift([{ x: 0, y: -260, w: 200, h: 80 }], area);
+    expect(-260 + s.dy - 40).toBeGreaterThanOrEqual(area.minY);
+  });
+  it("when the group is too spread out, reveals as many as fit (at least one)", () => {
+    const group = [{ x: 500, y: 0, w: 200, h: 80 }, { x: -1500, y: 0, w: 200, h: 80 }, { x: 600, y: 100, w: 200, h: 80 }];
+    const s = revealShift(group, area);
+    const shown = group.filter((b) => b.x + s.dx - b.w / 2 >= area.minX && b.x + s.dx + b.w / 2 <= area.maxX && b.y + s.dy - b.h / 2 >= area.minY && b.y + s.dy + b.h / 2 <= area.maxY);
+    expect(shown.length).toBe(2);
+  });
+  it("never changes the bubbles themselves", () => {
+    const b = [{ x: 900, y: 900, w: 100, h: 50 }];
+    revealShift(b, area);
+    expect(b[0]).toEqual({ x: 900, y: 900, w: 100, h: 50 });
+  });
+});
