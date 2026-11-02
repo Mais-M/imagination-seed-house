@@ -88,13 +88,14 @@ export const requestBrainstorm = createServerFn({ method: "POST" })
       { prefer: data.view ?? null },
     );
     const inserts = rows.map((s, i) => {
-      const type = types[i];
+      const type = types[i] ?? "idea";
+      const spot = spots[i] ?? { x: focus.x, y: focus.y };
       return {
         board_id: data.boardId,
         text: s.text,
         color: s.color || TYPE_COLOR[type] || "sky",
-        x: spots[i].x,
-        y: spots[i].y,
+        x: spot.x,
+        y: spot.y,
         is_ai: true,
         ai_type: type,
         status: "suggested",
