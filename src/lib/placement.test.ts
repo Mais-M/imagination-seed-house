@@ -105,6 +105,12 @@ describe("revealShift (view only)", () => {
     const s = revealShift([{ x: 0, y: -260, w: 200, h: 80 }], area);
     expect(-260 + s.dy - 40).toBeGreaterThanOrEqual(area.minY);
   });
+  it("when the group is too spread out, reveals as many as fit (at least one)", () => {
+    const group = [{ x: 500, y: 0, w: 200, h: 80 }, { x: -1500, y: 0, w: 200, h: 80 }, { x: 600, y: 100, w: 200, h: 80 }];
+    const s = revealShift(group, area);
+    const shown = group.filter((b) => b.x + s.dx - b.w / 2 >= area.minX && b.x + s.dx + b.w / 2 <= area.maxX && b.y + s.dy - b.h / 2 >= area.minY && b.y + s.dy + b.h / 2 <= area.maxY);
+    expect(shown.length).toBe(2);
+  });
   it("never changes the bubbles themselves", () => {
     const b = [{ x: 900, y: 900, w: 100, h: 50 }];
     revealShift(b, area);
