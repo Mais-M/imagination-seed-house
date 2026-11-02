@@ -63,7 +63,11 @@ const en = {
   title: "Title",
   write: "Write freely…",
   addTask: "Add a task…",
-  toMap: "Add to mind map",
+  toMap: "Add note to map",
+  noteAddedToMap: "Note added to map",
+  insightAddedToMap: "Insight added to map",
+  alreadyOnMap: "Already on map",
+  editInsight: "Edit insight",
   addInsightToMap: "Add this insight to map",
   addedToMap: "Added to the mind map",
   insights: "Insights",
@@ -152,7 +156,11 @@ const he: Dict = {
   title: "כותרת",
   write: "כתבו בחופשיות…",
   addTask: "הוספת משימה…",
-  toMap: "הוספה למפת החשיבה",
+  toMap: "הוספת הפתק למפה",
+  noteAddedToMap: "הפתק נוסף למפה",
+  insightAddedToMap: "התובנה נוספה למפה",
+  alreadyOnMap: "כבר במפה",
+  editInsight: "עריכת התובנה",
   addInsightToMap: "הוספת התובנה הזו למפה",
   addedToMap: "נוסף למפת החשיבה",
   insights: "תובנות",
@@ -240,8 +248,12 @@ const ar: Dict = {
   title: "العنوان",
   write: "اكتب بحرية…",
   addTask: "أضف مهمة…",
-  toMap: "أضف إلى خريطة التفكير",
-  addInsightToMap: "أضف هذه الفكرة إلى الخريطة",
+  toMap: "أضف الملاحظة إلى الخريطة",
+  noteAddedToMap: "أضيفت الملاحظة إلى الخريطة",
+  insightAddedToMap: "أضيفت الرؤية إلى الخريطة",
+  alreadyOnMap: "موجودة في الخريطة",
+  editInsight: "تعديل الرؤية",
+  addInsightToMap: "أضف هذه الرؤية إلى الخريطة",
   addedToMap: "أضيفت إلى خريطة التفكير",
   insights: "رؤى",
   analyzing: "جارٍ تحليل الملاحظة…",
@@ -272,7 +284,7 @@ const ar: Dict = {
   aiBadge: "AI",
 };
 
-const DICTS: Record<Lang, Dict> = { en, he, ar };
+export const DICTS: Record<Lang, Dict> = { en, he, ar };
 export type TKey = keyof Dict;
 
 const Ctx = createContext<{ lang: Lang; setLang: (l: Lang) => void; t: (k: TKey) => string; dir: "ltr" | "rtl" }>({

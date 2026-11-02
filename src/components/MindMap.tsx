@@ -9,6 +9,7 @@ import { useI18n, type TKey } from "@/lib/i18n";
 import { requestBrainstorm } from "@/lib/brainstorm.functions";
 import type { Conn, Node, Note } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
+import { bubbleSizes } from "@/lib/placement";
 
 type View = { x: number; y: number; k: number };
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -340,6 +341,7 @@ export function MindMap(props: {
                 }}
               >
                 <div
+                  ref={(el) => { if (el) bubbleSizes.set(n.id, { w: el.offsetWidth, h: el.offsetHeight }); }}
                   className={cn(
                     "relative animate-bubble-pop w-max max-w-[280px] min-w-[110px] cursor-pointer rounded-[1.75rem] px-5 py-3 text-center font-display text-base font-medium leading-snug shadow-bubble transition-shadow",
                     suggested && "border-[3px] border-dashed border-ai opacity-95",
