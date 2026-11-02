@@ -77,7 +77,7 @@ function BoardPage() {
         {tab === "map" ? (
           <MindMap boardId={boardId} userId={user.id} canEdit={b.canEdit} nodes={b.nodes} setNodes={b.setNodes} conns={b.conns} setConns={b.setConns} notes={b.notes} />
         ) : (
-          <NotesPanel boardId={boardId} canEdit={b.canEdit} notes={b.notes} setNotes={b.setNotes} todos={b.todos} setTodos={b.setTodos} setNodes={b.setNodes} />
+          <NotesPanel boardId={boardId} canEdit={b.canEdit} notes={b.notes} setNotes={b.setNotes} todos={b.todos} setTodos={b.setTodos} nodes={b.nodes} setNodes={b.setNodes} />
         )}
       </main>
     </div>

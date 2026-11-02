@@ -13,6 +13,10 @@ import { useI18n } from "@/lib/i18n";
 import type { Note, Todo, Node } from "@/lib/useBoard";
 import { cn } from "@/lib/utils";
 import { SyncedInput, SyncedTextarea } from "@/components/SyncedField";
+import { estimateBubbleSize, findFreeSpot, bubbleSizes } from "@/lib/placement";
+import type { TKey } from "@/lib/i18n";
+
+const INSIGHT_LABEL: Record<InsightType, TKey> = { idea: "aiIdea", question: "aiQuestion", connection: "aiConnection", perspective: "aiPerspective" };
 
 export function TodoCheck({ done, onToggle, disabled }: { done: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
@@ -39,9 +43,17 @@ export function NotesPanel(props: {
   setNotes: Dispatch<SetStateAction<Note[]>>;
   todos: Todo[];
   setTodos: Dispatch<SetStateAction<Todo[]>>;
+  nodes: Node[];
   setNodes: Dispatch<SetStateAction<Node[]>>;
 }) {
-  const { boardId, canEdit, notes, setNotes, todos, setTodos, setNodes } = props;
+  const { boardId, canEdit, notes, setNotes, todos, setTodos, nodes, setNodes } = props;
+  const spotFor = (text: string, isAi: boolean) => {
+    const existing = nodes.filter((x) => !x.deleted_at).map((x) => {
+      const m = bubbleSizes.get(x.id) ?? estimateBubbleSize(x.text, x.is_ai);
+      return { x: x.x, y: x.y, w: m.w, h: m.h };
+    });
+    return findFreeSpot(existing, estimateBubbleSize(text, isAi));
+  };
   const { t, lang } = useI18n();
   const [active, setActive] = useState<string | null>(null);
   useEffect(() => {
@@ -77,14 +89,16 @@ export function NotesPanel(props: {
     await supabase.from("notes").delete().eq("id", id);
   };
   const toMap = async (n: Note) => {
+    const text = n.title || n.content.slice(0, 80) || "…";
+    const p = spotFor(text, false);
     const { data, error } = await supabase
       .from("nodes")
-      .insert({ board_id: boardId, text: n.title || n.content.slice(0, 80) || "…", color: n.color, note_id: n.id, x: (Math.random() - 0.5) * 300, y: (Math.random() - 0.5) * 300 })
+      .insert({ board_id: boardId, text, color: n.color, note_id: n.id, x: p.x, y: p.y })
       .select()
       .single();
     if (error) { toast.error(error.message); return; }
     setNodes((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
-    toast.success(t("addedToMap"));
+    toast.success(t("noteAddedToMap"));
   };
   const addTodo = async (text: string) => {
     if (!note || !text.trim()) return;
@@ -119,15 +133,16 @@ export function NotesPanel(props: {
   const addInsight = async (n: Note, i: number) => {
     const s = insights[i];
     if (!s || !s.text.trim()) return;
+    const p = spotFor(s.text.trim(), true);
     const { data, error } = await supabase
       .from("nodes")
-      .insert({ board_id: boardId, text: s.text.trim(), color: INSIGHT_COLOR[s.type], note_id: n.id, is_ai: true, ai_type: s.type, status: "accepted", x: (Math.random() - 0.5) * 300, y: (Math.random() - 0.5) * 300 })
+      .insert({ board_id: boardId, text: s.text.trim(), color: INSIGHT_COLOR[s.type], note_id: n.id, is_ai: true, ai_type: s.type, status: "accepted", x: p.x, y: p.y })
       .select()
       .single();
     if (error) { toast.error(error.message); return; }
     setNodes((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
     setInsights((l) => l.filter((_, j) => j !== i));
-    toast.success(t("addedToMap"));
+    toast.success(t("insightAddedToMap"));
   };
 
   const items = note ? todos.filter((x) => x.note_id === note.id) : [];
@@ -183,7 +198,10 @@ export function NotesPanel(props: {
                       <button key={c} aria-label={c} onClick={() => patchNote(note.id, { color: c })} className={cn("size-5 rounded-full", note.color === c && "ring-2 ring-foreground")} style={{ background: bubbleBg(c) }} />
                     ))}
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => toMap(note)}><Network /> {t("toMap")}</Button>
+                  {(() => {
+                    const onMap = nodes.some((x) => x.note_id === note.id && !x.is_ai && !x.deleted_at);
+                    return <Button size="sm" variant="outline" disabled={onMap} onClick={() => toMap(note)}><Network /> {onMap ? t("alreadyOnMap") : t("toMap")}</Button>;
+                  })()}
                   {insightsOn && (
                     <Button size="sm" variant="secondary" disabled={loadingInsights} onClick={() => runInsights(note)}>
                       {loadingInsights ? <Loader2 className="animate-spin" /> : <Sparkles />} {t("insights")}
@@ -195,18 +213,19 @@ export function NotesPanel(props: {
             </div>
             {loadingInsights && <p className="text-sm text-muted-foreground">{t("analyzing")}</p>}
             {insights.length > 0 && (
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2 lg:grid-cols-2">
                 {insights.map((s, i) => (
-                  <div key={i} className="flex flex-col gap-2 rounded-2xl p-3 shadow-bubble" style={{ background: bubbleBg(INSIGHT_COLOR[s.type]) }}>
-                    <span className="text-xs font-bold uppercase opacity-70">{s.type}</span>
+                  <div key={i} className="flex min-w-0 flex-col gap-2 rounded-2xl p-3 shadow-bubble" style={{ background: bubbleBg(INSIGHT_COLOR[s.type]) }}>
+                    <span className="text-xs font-bold opacity-70">{t(INSIGHT_LABEL[s.type])}</span>
                     <textarea
                       dir="auto"
+                      aria-label={t("editInsight")}
                       value={s.text}
                       onChange={(e) => setInsights((l) => l.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
                       className="min-h-16 w-full resize-y rounded-lg bg-card/60 p-2 text-sm outline-none"
                     />
-                    <div className="flex gap-2">
-                      <Button size="sm" disabled={!s.text.trim()} onClick={() => addInsight(note, i)}><Plus /> {t("addInsightToMap")}</Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" className="h-auto min-h-8 whitespace-normal py-1 text-start" disabled={!s.text.trim()} onClick={() => addInsight(note, i)}><Plus /> {t("addInsightToMap")}</Button>
                       <Button size="sm" variant="ghost" onClick={() => setInsights((l) => l.filter((_, j) => j !== i))}><X /> {t("dismiss")}</Button>
                     </div>
                   </div>
