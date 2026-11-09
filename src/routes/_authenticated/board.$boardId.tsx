@@ -50,7 +50,7 @@ function BoardPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-dvh flex-col bg-background">
       <AppHeader>
         <Button asChild variant="ghost" size="sm"><Link to="/boards"><ArrowLeft className="rtl:rotate-180" /> {t("back")}</Link></Button>
         {b.board && (

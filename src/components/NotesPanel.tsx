@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { Check, FileText, ListTodo, Loader2, Network, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { insightsEnabled, requestNoteInsights } from "@/lib/insights.functions";
@@ -78,6 +78,15 @@ export function NotesPanel(props: {
     if (!active && notes[0]) setActive(notes[0].id);
   }, [notes, active]);
   const note = notes.find((n) => n.id === active);
+  // On phones the editor sits below the list: bring it into view when the user picks or creates a note.
+  const editorRef = useRef<HTMLElement>(null);
+  const userPicked = useRef(false);
+  useEffect(() => {
+    if (!userPicked.current || !active) return;
+    userPicked.current = false;
+    if (window.matchMedia("(max-width: 767px)").matches) editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [active]);
+  const pick = (id: string) => { userPicked.current = true; setActive(id); };
   const fetchInsights = useServerFn(requestNoteInsights);
   const checkInsights = useServerFn(insightsEnabled);
   const [insightsOn, setInsightsOn] = useState(false);
@@ -94,7 +103,7 @@ export function NotesPanel(props: {
     const { data, error } = await supabase.from("notes").insert({ board_id: boardId, kind, color, title: kind === "todo" ? t("newTodo") : t("newNote") }).select().single();
     if (error) { toast.error(error.message); return; }
     setNotes((l) => (l.some((x) => x.id === data.id) ? l : [...l, data]));
-    setActive(data.id);
+    pick(data.id);
   };
   const patchNote = async (id: string, p: Partial<Note>) => {
     setNotes((l) => l.map((n) => (n.id === id ? { ...n, ...p } : n)));
@@ -168,8 +177,8 @@ export function NotesPanel(props: {
   const items = note ? todos.filter((x) => x.note_id === note.id) : [];
 
   return (
-    <div className="grid h-full gap-4 overflow-hidden p-4 md:grid-cols-[280px_1fr]">
-      <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+    <div className="grid h-full content-start gap-4 overflow-y-auto p-4 md:content-stretch md:grid-cols-[280px_1fr] md:overflow-hidden">
+      <aside className="flex max-h-[40dvh] min-h-0 flex-col gap-3 overflow-y-auto md:max-h-none">
         {canEdit && (
           <div className="flex gap-2">
             <Button size="sm" className="flex-1" onClick={() => create("note")}><FileText /> {t("newNote")}</Button>
@@ -182,7 +191,7 @@ export function NotesPanel(props: {
           return (
             <button
               key={n.id}
-              onClick={() => setActive(n.id)}
+              onClick={() => pick(n.id)}
               className={cn("rounded-2xl p-3 text-start shadow-bubble transition-transform hover:-translate-y-0.5", active === n.id && "ring-4 ring-primary")}
               style={{ background: bubbleBg(n.color) }}
             >
@@ -200,7 +209,7 @@ export function NotesPanel(props: {
         })}
       </aside>
 
-      <section className="min-h-0 overflow-y-auto rounded-[2rem] bg-card p-6 shadow-bubble">
+      <section ref={editorRef} className="min-h-0 scroll-mt-4 overflow-y-auto rounded-[2rem] bg-card p-6 shadow-bubble">
         {note ? (
           <div key={note.id} className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
