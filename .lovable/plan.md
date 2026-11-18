@@ -1,35 +1,37 @@
-# Security review before making the GitHub repository public
+# Fix plan: board invitations and board ownership
 
-Read-only review. Nothing was changed.
+Plan only. Nothing has been changed yet.
 
-## Result
-- **Leaked secrets:** none. I searched the current files and all 109 saved versions of the project. Nothing that only exists on GitHub was searched.
-- **Deep code scan:** found 2 serious access-control problems. They are in how the app is built, not in the repository, so making the repository public does not cause them. They already affect the live app, and a public repository makes them easier to spot.
+## What I checked
+- The app never changes anyone's profile email or a board's owner. It only reads profiles to show member names, and it only renames boards.
+- All 5 saved profiles currently have the same email as the account's Google sign-in. No existing data is affected and nothing needs cleaning up.
 
-## Finding 1 (serious): someone can receive an invitation meant for another person
-- **What happens:** any signed-in user can change the email saved on their own profile to someone else's address. When a board owner then shares a board with that address, the wrong person gets access and can read or edit the board.
-- **Where:** the profile permissions and the board-sharing function in the database (`drizzle/migrations/0000_migration.sql`).
-- **Proposed fix:** stop users from editing their own profile email, so it always matches their Google sign-in email. Display name and photo stay editable.
+## Issue 1: an invitation can reach the wrong person
+- **Problem:** sharing finds the person by the email on their profile. Anyone can edit their own profile email, so someone could claim another person's address and receive that person's invitations.
+- **Fix, part A:** sharing will look the person up by their real Google sign-in email instead of the editable profile email.
+- **Fix, part B:** the database will refuse any change to a profile's email. Names and photos are unaffected.
 
-## Finding 2 (serious): an editor can take ownership of a shared board
-- **What happens:** the database lets any editor change a board's owner to themselves. They could then remove the real owner or delete the board.
-- **Where:** the board permissions in the database (same file).
-- **Proposed fix:** only allow board updates that keep the owner unchanged. Editors can still rename the board.
+## Issue 2: an editor can take over a board
+- **Problem:** editors can change any part of a board, including who owns it.
+- **Fix:** the database will refuse any change to a board's owner. Owners and editors can still rename the board.
 
-## Finding 3 (low): permission checks callable by signed-out visitors
-- **What happens:** signed-out visitors can call the internal "can this person view/edit this board" checks, but these only ever answer "no" for them.
-- **Proposed fix:** block signed-out visitors from calling these checks.
+## Optional, low risk
+- Block signed-out visitors from calling the internal permission checks. Signed-in use stays exactly the same.
 
-## Not affected
-- Mind Map, Spark with AI, Insights, Make, Google sign-in, notes, TODOs, existing boards and members, and saved content all stay as they are.
+## Not changed
+- Google sign-in, sharing by email, editor and viewer roles, live collaboration, Mind Map, Spark with AI, Insights, Make, notes, TODOs, and all existing boards, members and content.
 
-## How I'd check the fixes
-- Signed in as a regular user, try to change your profile email and confirm it is refused.
-- As an editor, try to change a board's owner and confirm it is refused. Renaming the board must still work.
-- Sharing, editing, the AI features and live collaboration must still work. The security scan must show both serious findings resolved.
+## How I'll verify
+1. As a regular signed-in user, try to change the profile email: it is refused. Changing the display name still works.
+2. As an editor, try to change a board's owner: it is refused. Renaming the board as an editor still works.
+3. As the owner, share a board with a real account email: it works, and the person appears in the member list. Sharing with an unknown email still says "not found".
+4. Open the shared board as the invited user, edit a bubble and a TODO, and confirm the change shows up live for the owner.
+5. Re-run the security scan and confirm both serious findings are resolved. Run the existing automated tests.
 
-## Technical details
-- Restrict profile updates so the `email` column cannot change. Only `display_name` and `avatar_url` stay updatable, through a column-level grant or a trigger that rejects email changes.
-- Add a `boards` update guard (a trigger) that rejects any change to `owner_id`.
-- `revoke execute ... from anon` on `can_edit_board`, `can_view_board`, `is_board_owner`, `shares_board_with` and `handle_new_user`.
-- One database migration only. No app code changes.
+These tests run on a temporary test board. I'll remove anything I create when I'm done.
+
+## Technical details (one database migration, no app code changes)
+- `share_board`: look the person up in `auth.users` by email (still `security definer`, `search_path=public`). The same `not_found` / `self` / `ok` results, so the share dialog keeps working.
+- Trigger on `public.profiles` BEFORE UPDATE: raise an error if `new.email is distinct from old.email`. Sign-up creates profiles with an insert, so this trigger never touches it.
+- Trigger on `public.boards` BEFORE UPDATE: raise an error if `new.owner_id is distinct from old.owner_id`.
+- Optional: `revoke execute ... from anon, public` on `can_edit_board`, `can_view_board`, `is_board_owner`, `shares_board_with`, `handle_new_user`. Keep signed-in access, since the app calls `can_edit_board` directly.
